@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Spellmon - SLS Edition</title>
+    
+    <link href="vendor/tailwind.min_4.css" rel="stylesheet">
+    
+    <script crossorigin src="vendor/react.production.min.js"></script>
+    <script crossorigin src="vendor/react-dom.production.min_1.js"></script>
+    <script src="vendor/babel.min_2.js"></script>
+    <script src="vendor/three.min_3.js"></script>
+
+    <style>
+        html, body, #root { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #111827; overscroll-behavior-y: none; }
+        body { -webkit-overflow-scrolling: touch; }
+        .ios-container { height: 100%; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; }
+        .ios-btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        .image-pixelated { image-rendering: pixelated; }
+        input[type="text"] { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; } 
+        /* Custom scrollbar for selection screen */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // --- GAME CONSTANTS ---
+        const TILE_SIZE = 40; 
+        const MAP_WIDTH = 50; 
+        const MAP_HEIGHT = 50;
+        const VIEW_WIDTH = 12;  
+        const VIEW_HEIGHT = 12; 
+
+        const TILE_GRASS = 0; const TILE_MOUNTAIN = 1; const TILE_FOREST = 2;
+        const TILE_PATH = 3; const TILE_WATER = 4; const TILE_SNOW = 5; const TILE_SAND = 6;
+        const TILE_SKY = 7; 
+
+        // --- DYNAMIC AUDIO ENGINE ---
+        const AudioEngine = {
+          ctx: null, timer: null, isPlaying: false,
+          init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+          playSequence(seq, type = 'square', speedFactor = 1, repeat = true) {
+            this.init(); if (this.ctx.state === 'suspended') this.ctx.resume();
+            this.stop(); this.isPlaying = true;
+            let tick = 0.15 * speedFactor; let tIndex = 0;
+            const loop = () => {
+              if (!this.isPlaying) return;
+              if (!repeat && tIndex >= seq.length) { this.isPlaying = false; return; }
+              let freq = seq[tIndex % seq.length];
+              let o = this.ctx.createOscillator(); let g = this.ctx.createGain();
+              o.type = type; o.frequency.value = freq;
+              o.connect(g); g.connect(this.ctx.destination);
+              let now = this.ctx.currentTime;
+              o.start(now); g.gain.setValueAtTime(0.05, now); g.gain.exponentialRampToValueAtTime(0.001, now + tick - 0.02); o.stop(now + tick);
+              tIndex++; this.timer = setTimeout(loop, tick * 1000);
+            };
+            loop();
+          },
+          playBattleMusic(tier) {
+            if (tier <= 2) this.playSequence([392, 392, 440, 440, 494, 494, 523, 523], 'square', 1.2);
+            else if (tier <= 4) this.playSequence([392, 494, 587, 494, 523, 659, 784, 659], 'square', 0.8);
+            else this.playSequence([659, 880, 988, 1047, 880, 1047, 1319, 1047, 1319, 1047, 988, 880], 'sawtooth', 0.6);
+          },
+          playSuccess() { this.playSequence([523, 659, 784, 1047], 'square', 0.5, false); },
+          playSad() { this.playSequence([440, 415, 392, 349], 'sawtooth', 1.5, false); },
+          stop() { this.isPlaying = false; if (this.timer) clearTimeout(this.timer); }
+        };
+
+        // --- PROCEDURAL TEXTURES ---
+        const generateTextures = () => {
+          const createTile = (drawFn) => {
+            const c = document.createElement('canvas'); c.width = TILE_SIZE; c.height = TILE_SIZE;
+            drawFn(c.getContext('2d')); return c;
+          };
+          return {
+            grass: createTile(ctx => { ctx.fillStyle = '#6ab845'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#59a334'; for(let i=0;i<20;i++) ctx.fillRect(Math.random()*TILE_SIZE,Math.random()*TILE_SIZE,3,3); }),
+            forest: createTile(ctx => { ctx.fillStyle = '#1e751e'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#124d12'; ctx.beginPath(); ctx.arc(12,12,14,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(32,16,16,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(20,34,15,0,Math.PI*2); ctx.fill(); }),
+            mountain: createTile(ctx => { ctx.fillStyle = '#9e733c'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#7a5426'; ctx.beginPath(); ctx.moveTo(0,TILE_SIZE); ctx.lineTo(TILE_SIZE/2,10); ctx.lineTo(TILE_SIZE,TILE_SIZE); ctx.fill(); }),
+            path: createTile(ctx => { ctx.fillStyle = '#d4be83'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#bfa96f'; for(let i=0;i<15;i++) ctx.fillRect(Math.random()*TILE_SIZE,Math.random()*TILE_SIZE,4,2); }),
+            water: createTile(ctx => { ctx.fillStyle = '#3b82f6'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#60a5fa'; for(let i=0;i<8;i++) ctx.fillRect(Math.random()*TILE_SIZE,Math.random()*TILE_SIZE,8,2); }),
+            snow: createTile(ctx => { ctx.fillStyle = '#f8fafc'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#cbd5e1'; for(let i=0;i<12;i++) ctx.fillRect(Math.random()*TILE_SIZE,Math.random()*TILE_SIZE,3,3); }),
+            sand: createTile(ctx => { ctx.fillStyle = '#fcd34d'; ctx.fillRect(0,0,TILE_SIZE,TILE_SIZE); ctx.fillStyle = '#fbbf24'; for(let i=0;i<15;i++) ctx.fillRect(Math.random()*TILE_SIZE,Math.random()*TILE_SIZE,3,3); }),
+          };
+        };
+
+        // --- ALL SPELLING LISTS (P3 & P4) ---
+        const ALL_SPELLING_LISTS = {
+          P3: {
+            'P3_U4': {
+              title: 'Unit 4: Predators & Prey',
+              words: [
+                { sentence: 'The animals that predators hunt are called {blank}.', correct: 'prey' },
+                { sentence: 'In order to {blank}, living things need air, food and water.', correct: 'survive' },
+                { sentence: 'Lions are predators with incredible {blank} and fierce nature.', correct: 'strength' },
+                { sentence: "The panda's natural {blank} is the bamboo forest.", correct: 'habitat' },
+                { sentence: 'Pufferfish may be cute looking but they are extremely {blank}.', correct: 'poisonous' },
+                { sentence: 'The bald eagle uses its sharp {blank} to swoop down and catch a fish.', correct: 'talons' },
+                { sentence: 'A porcupine has {blank} to help it stay safe from being attacked.', correct: 'quills' },
+                { sentence: 'Grey wolves often {blank} to bring down large animals like deer.', correct: 'hunt in packs' },
+                { sentence: 'Some animals play dead as this tactic {blank} them from being eaten.', correct: 'protects' },
+                { sentence: 'Stonefish are masters of {blank} and can blend into their surroundings.', correct: 'camouflage' }
+              ]
+            },
+            'P3_U5': {
+              title: 'Unit 5: Stars of Chek Jawa',
+              words: [
+                { sentence: 'Tigers can be found in forests and {blank}.', correct: 'mangroves' },
+                { sentence: 'A {blank} of a thousand miles begins with a single step.', correct: 'journey' },
+                { sentence: '{blank} are home to a great variety of plants and animals.', correct: 'Habitats' },
+                { sentence: 'The {blank} in Indonesia have caused serious air pollution problems.', correct: 'forest fires' },
+                { sentence: 'Animal {blank} is the travelling of long distances in search of a new habitat.', correct: 'migration' },
+                { sentence: 'We can walk along the {blank} in the nature reserve to appreciate the animals.', correct: 'boardwalk' },
+                { sentence: 'Sea stars have neither scales nor {blank}.', correct: 'backbones' },
+                { sentence: 'The tube feet found {blank} the sea stars body help it to move around.', correct: 'underneath' },
+                { sentence: 'The sea stars have an amazing ability to regrow their arms for {blank}.', correct: 'regeneration' },
+                { sentence: 'With so many areas of woodland being cut down, a lot of {blank} is losing its home.', correct: 'wildlife' }
+              ]
+            },
+            'P3_U6': {
+              title: 'Unit 6: Unusual Plants',
+              words: [
+                { sentence: 'The {blank} works like a vacuum cleaner.', correct: 'bladderwort' },
+                { sentence: 'Some plants have developed {blank} ways of surviving.', correct: 'unique' },
+                { sentence: 'We can think of ways to {blank} and overcome challenges.', correct: 'adapt' },
+                { sentence: 'The most well-known {blank} plant is the Venus Flytrap.', correct: 'carnivorous' },
+                { sentence: 'The Venus Flytrap has {blank} coloured leaves that attract insects.', correct: 'vibrant' },
+                { sentence: 'The Venus Flytrap releases special juices to {blank} the insects.', correct: 'digest' },
+                { sentence: 'The more the insect {blank}, the deeper it sinks.', correct: 'struggles' },
+                { sentence: 'The Rafflesia lives as a {blank} on another plant.', correct: 'parasite' },
+                { sentence: 'The Rafflesia {blank} its host plant but does not kill it.', correct: 'weakens' },
+                { sentence: 'The lip of the pitcher plant is {blank}.', correct: 'slippery' }
+              ]
+            },
+            'P3_U7': {
+              title: "Unit 7: Boy Under The Bed",
+              words: [
+                { sentence: 'Smook slid over to the {blank} of the bed.', correct: 'edge' },
+                { sentence: 'Smook sat {blank} on his bed when his mother told him there was no ghost.', correct: 'quivering' },
+                { sentence: 'I hope to make a {blank} to the lives of others.', correct: 'difference' },
+                { sentence: 'As the door {blank} open in the middle of the night...', correct: 'squeaked' },
+                { sentence: 'The professional dancers amazed us when they flip-flopped backwards {blank}.', correct: 'effortlessly' },
+                { sentence: 'The stray cat was {blank} from the lack of food.', correct: 'scrawny' },
+                { sentence: 'We were being {blank} into the train when it arrived.', correct: 'shoved' },
+                { sentence: 'Tony {blank} his shoulders as he did not know the answer too.', correct: 'shrugged' },
+                { sentence: 'Smook felt {blank} that the boy was not scared of him.', correct: 'disappointed' },
+                { sentence: 'He took a deep breath and then slowly {blank} over the side.', correct: 'leaned' }
+              ]
+            },
+            'P3_U8': {
+              title: 'Unit 8: Prince Zak',
+              words: [
+                { sentence: 'The sneaky robber walked {blank} around the house so he would not be caught.', correct: 'warily' },
+                { sentence: 'The wise frog hid amongst the weeds and {blank} watched the prince.', correct: 'keenly' },
+                { sentence: 'The ball that James dropped was {blank} up and down in the water.', correct: 'bobbing' },
+                { sentence: 'Jonathan has turned over a new leaf and been on his best {blank} lately.', correct: 'behaviour' },
+                { sentence: 'My plants died because I {blank} watering them for weeks.', correct: 'neglected' },
+                { sentence: 'Sarah quickly rushed back to the store to {blank} her wallet.', correct: 'retrieve' },
+                { sentence: 'Her diamond necklace {blank} under the sun, attracting attention.', correct: 'gleamed' },
+                { sentence: 'We are {blank} to have Mrs Tan as our teacher as she is kind and caring.', correct: 'fortunate' },
+                { sentence: 'Peter stared {blank} out the window, upset that his game was cancelled.', correct: 'dejectedly' },
+                { sentence: 'Jenny squealed with {blank} when she saw her brand new bicycle.', correct: 'excitement' }
+              ]
+            },
+            'P3_U9': {
+              title: 'Unit 9: Spilt Milk',
+              words: [
+                { sentence: 'The tourists were frantically snapping photos as the ferry cruised along the {blank}.', correct: 'riverbank' },
+                { sentence: 'Dinesh and Jamal were always looking for some {blank} when they travel.', correct: 'adventure' },
+                { sentence: 'Sally {blank} and rolled out of the bed when her mother woke her up early.', correct: 'moaned' },
+                { sentence: 'The magician made the rabbit {blank} with a quick wave of his magic wand.', correct: 'disappear' },
+                { sentence: '"We did it!" Betsy {blank} as we caught our breath.', correct: 'exclaimed' },
+                { sentence: 'You should always keep your {blank} on when you are on the boat.', correct: 'life jacket' },
+                { sentence: 'The natural {blank} left a huge number of people homeless.', correct: 'disaster' },
+                { sentence: '"Watch out! You nearly {blank} me in the eye with your umbrella."', correct: 'jabbed' },
+                { sentence: 'There were many boats lined up at Bedok {blank}.', correct: 'jetty' },
+                { sentence: 'Running along the beach, she {blank} on a log and fell on the sand.', correct: 'stumbled' }
+              ]
+            }
+          },
+          P4: {
+            'P4_T1_1': {
+              title: 'Term 1: Definitions (Pt 1)',
+              words: [
+                { sentence: 'The doctor will {blank} the patient to check their health.', correct: 'examine' },
+                { sentence: "A butterfly's wings are very {blank} and easy to break.", correct: 'delicate' },
+                { sentence: 'My skin gets itchy easily because it is very {blank}.', correct: 'sensitive' },
+                { sentence: 'White flakes that fall from your hair are called {blank}.', correct: 'dandruff' },
+                { sentence: 'I enjoy reading books during my {blank} time.', correct: 'leisure' },
+                { sentence: 'Feeding your pet every day is your {blank}.', correct: 'responsibility' },
+                { sentence: 'He helps out as a {blank} at the community park.', correct: 'volunteer' },
+                { sentence: 'Lost pets are kept safe at the {blank}.', correct: 'animal shelter' },
+                { sentence: 'Riding a roller coaster for the first time is a fun {blank}.', correct: 'experience' },
+                { sentence: 'Washing your hands makes catching a cold {blank}.', correct: 'preventable' }
+              ]
+            },
+            'P4_T1_2': {
+              title: 'Term 1: Definitions (Pt 2)',
+              words: [
+                { sentence: 'We took the moving {blank} up to the second floor.', correct: 'escalator' },
+                { sentence: 'The car stopped to let the {blank} cross the road.', correct: 'pedestrian' },
+                { sentence: 'After the accident, his arm was {blank} and could not move well.', correct: 'partially paralyzed' },
+                { sentence: 'The {blank} cat playfully knocked the cup off the table.', correct: 'mischievous' },
+                { sentence: 'She showed great {blank} by trying again after failing.', correct: 'resilience' },
+                { sentence: 'Doctors who treat teeth {blank} in dentistry.', correct: 'specialise' },
+                { sentence: 'Please {blank} that the front door is locked.', correct: 'ensure' },
+                { sentence: 'I {blank} you that everything will be perfectly fine.', correct: 'assure' },
+                { sentence: 'Singapore was the {blank} for the Youth Olympic Games.', correct: 'host city' },
+                { sentence: 'The red light will {blank} that the battery is low.', correct: 'indicate' }
+              ]
+            },
+            'P4_U4_S7': {
+              title: 'Unit 4: The World Beyond Us (7)',
+              words: [
+                { sentence: 'While Mary was eating, a {blank} figure caught her attention.', correct: 'familiar' },
+                { sentence: 'Mother has to stir the pot {blank} while cooking the porridge.', correct: 'continuously' },
+                { sentence: 'An {blank} is a rocky object which moves around the Sun.', correct: 'asteroid' },
+                { sentence: 'Human activities have resulted in the {blank} of some animal species.', correct: 'extinction' },
+                { sentence: 'Gravity is an example of a {blank}.', correct: 'natural phenomenon' },
+                { sentence: 'He uses an object to block light and successfully {blank}.', correct: 'casts a shadow' },
+                { sentence: 'This school is {blank} better because of its varied programmes.', correct: 'infinitely' },
+                { sentence: 'Made of rock, ice and gas, a {blank} moves around the Sun.', correct: 'comet' },
+                { sentence: 'Our solar system is made up of eight {blank}.', correct: 'planets' },
+                { sentence: 'We are taught to {blank} positively with our peers in school.', correct: 'interact' }
+              ]
+            },
+            'P4_U4_S8': {
+              title: 'Unit 4: The World Beyond Us (8)',
+              words: [
+                { sentence: 'I really {blank} all that Jolie has done for me.', correct: 'appreciate' },
+                { sentence: 'We are advised to exercise {blank} to improve muscle strength.', correct: 'regularly' },
+                { sentence: 'When lights are turned off, the room becomes {blank}.', correct: 'as dark as night' },
+                { sentence: 'Planets {blank} around the Sun.', correct: 'orbit in an ellipse' },
+                { sentence: 'A partial {blank} can be observed in Singapore tomorrow.', correct: 'solar eclipse' },
+                { sentence: 'We use a ruler to make sure our lines are {blank}.', correct: 'straight' },
+                { sentence: 'What an {blank} he has put up! He fooled everybody.', correct: 'appearance' },
+                { sentence: 'With her gift of writing {blank}, she captures readers attention.', correct: 'interestingly' },
+                { sentence: 'It is difficult to {blank} which team will win the competition.', correct: 'predict' },
+                { sentence: 'Astronomers use a {blank} to see faraway objects.', correct: 'special telescope' }
+              ]
+            },
+            'P4_U5_S9': {
+              title: "Unit 5: Ruby's Sunflower (9)",
+              words: [
+                { sentence: 'The player believes that {blank} and spends every morning training.', correct: 'practice makes perfect' },
+                { sentence: "The teacher's warning {blank} and the students got injured.", correct: 'fell on deaf ears' },
+                { sentence: 'Do not make unnecessary comments and {blank}, my mother warned.', correct: 'add fuel to the fire' },
+                { sentence: 'In the {blank}, a few weeks passed and the holiday was over.', correct: 'blink of an eye' },
+                { sentence: 'Pack your messy room immediately, Father said {blank}.', correct: 'crossly' },
+                { sentence: 'It is interesting to {blank} the differences between the two animals.', correct: 'compare' },
+                { sentence: 'She is {blank} for cheating the company of millions of dollars.', correct: 'in hot water' },
+                { sentence: 'We worked together to find a solution as we were already {blank}.', correct: 'in the same boat' },
+                { sentence: 'The police spent days on the case, but are now {blank}.', correct: 'back to square one' },
+                { sentence: 'As the performance drew near, she started to {blank} and thought of backing out.', correct: 'get cold feet' }
+              ]
+            },
+            'P4_U5_S10': {
+              title: "Unit 5: Ruby's Sunflower (10)",
+              words: [
+                { sentence: 'Jeffrey chose to {blank} instead of telling his parents the truth.', correct: 'spin a yarn' },
+                { sentence: 'After a few repairs and a good wash, the used car is {blank}.', correct: 'as good as new' },
+                { sentence: 'We had a fight last night and he is {blank}.', correct: 'giving me the cold shoulder' },
+                { sentence: 'Simon {blank} the moment he was announced as head prefect.', correct: 'punched the air with delight' },
+                { sentence: 'It had been {blank}, causing many parts of Singapore to flood.', correct: 'raining cats and dogs' },
+                { sentence: 'Barry {blank} to his feet when the principal entered.', correct: 'scrambled' },
+                { sentence: 'Seeing him scolded for my mistake really {blank}.', correct: 'pricked my conscience' },
+                { sentence: 'You stick with your best friend {blank}.', correct: 'through thick and thin' },
+                { sentence: 'Jill went red with {blank} when Jack exposed her lies.', correct: 'embarrassment' },
+                { sentence: 'When the recess bell rang, he {blank} for the chicken rice stall.', correct: 'made a beeline' }
+              ]
+            },
+            'P4_U6_S11': {
+              title: 'Unit 6: Dinosaurs Exist (11)',
+              words: [
+                { sentence: 'The explorers went on an exciting {blank} to the jungle.', correct: 'expedition' },
+                { sentence: 'Spray some {blank} to avoid mosquito bites.', correct: 'insect repellent' },
+                { sentence: 'The children played soccer at the HDB {blank}.', correct: 'void deck' },
+                { sentence: 'The author writes great stories using his {blank}.', correct: 'vivid imagination' },
+                { sentence: 'A wedding is a very special {blank}.', correct: 'occasion' },
+                { sentence: 'The thieves kept the stolen treasure in their secret {blank}.', correct: 'hideout' },
+                { sentence: 'The {blank} hiker climbed the highest mountain.', correct: 'adventurous' },
+                { sentence: 'She was {blank} to try the spicy food.', correct: 'reluctant' },
+                { sentence: 'The magical cloak made the wizard completely {blank}.', correct: 'invisible' },
+                { sentence: 'He tried to {blank} his parents to buy him a new toy.', correct: 'convince' },
+                { sentence: 'The detective found {blank} of the crime.', correct: 'photographic evidence' },
+                { sentence: 'Dinosaurs are {blank} and no longer roam the Earth.', correct: 'extinct' }
+              ]
+            },
+            'P4_U6_S12': {
+              title: 'Unit 6: Dinosaurs Exist (12)',
+              words: [
+                { sentence: 'The dark cave was guarded by two {blank}.', correct: 'terrifying beasts' },
+                { sentence: 'The wild wolves were {blank} at the strangers.', correct: 'raging and snarling' },
+                { sentence: 'The street performer entertained the {blank}.', correct: 'passers-by' },
+                { sentence: 'The giant troll was a {blank} with huge muscles.', correct: 'towering brute' },
+                { sentence: 'The tiger was {blank}, waiting for its prey in the grass.', correct: 'crouching low' },
+                { sentence: 'The cat was perfectly still and {blank} on the mouse.', correct: 'ready to pounce' },
+                { sentence: 'The horror movie was filled with {blank} that scared us.', correct: 'blood-curdling terrors' },
+                { sentence: 'The magician made the rabbit {blank} into thin air.', correct: 'vanish' },
+                { sentence: 'The scammer tried to {blank} the old lady.', correct: 'deceive' },
+                { sentence: 'It was difficult to {blank} the complex math problem.', correct: 'comprehend' },
+                { sentence: 'The ancient cave walls were covered in {blank}.', correct: 'prehistoric images' },
+                { sentence: 'He {blank} and swam in the dangerous shark waters.', correct: 'ignored the warning' }
+              ]
+            },
+            'P4_U7_S13': {
+              title: 'Unit 7: Heartbeats in the Dark',
+              words: [
+                { sentence: 'We found old dusty boxes hidden up in the roof {blank}.', correct: 'attic' },
+                { sentence: 'I have always {blank} going to the dentist.', correct: 'dreaded' },
+                { sentence: 'I saw a {blank} of gold shining in the dark cave.', correct: 'glint' },
+                { sentence: 'He gave me an angry {blank} when I dropped his book.', correct: 'glare' },
+                { sentence: 'The tall, spooky shadows seem to {blank} us.', correct: 'loom over' },
+                { sentence: 'The giant tropical leaves were {blank}.', correct: 'as big as elephants ears' },
+                { sentence: 'The thick heat in the crowded room was {blank}.', correct: 'suffocating' },
+                { sentence: 'The campfire was {blank} brightly in the dark night.', correct: 'blazing' },
+                { sentence: 'He had to use all his strength to {blank} the stuck door.', correct: 'yank open' },
+                { sentence: 'I {blank} it will rain tomorrow based on the dark clouds.', correct: 'reckon' }
+              ]
+            },
+            'P4_U8_S16': {
+              title: 'Unit 8: All the Buzz (16)',
+              words: [
+                { sentence: 'Add some sugar to {blank} the bitter tea.', correct: 'sweeten' },
+                { sentence: 'Many natural herbs are often used for {blank}.', correct: 'medicinal purposes' },
+                { sentence: 'Take this medicine to {blank} the sharp pain.', correct: 'relieve' },
+                { sentence: 'Use lotion every night to {blank} your dry skin.', correct: 'moisturise' },
+                { sentence: 'He tried to {blank} the annoying fly away with a newspaper.', correct: 'swat' },
+                { sentence: 'The dentist carefully {blank} the decayed tooth.', correct: 'extracted' },
+                { sentence: 'A large {blank} of busy ants lives under the log.', correct: 'colony' },
+                { sentence: 'The red flashing light will {blank} that the battery is low.', correct: 'indicate' },
+                { sentence: 'The bridge is a magnificent steel {blank}.', correct: 'structure' },
+                { sentence: 'A mother bird often {blank} food for its babies to eat.', correct: 'regurgitates' },
+                { sentence: 'The rotten, mouldy food had a {blank} smell.', correct: 'disgusting' },
+                { sentence: 'Please {blank} the money to my bank account online.', correct: 'transfer' }
+              ]
+            },
+            'P4_U8_S17': {
+              title: 'Unit 8: All the Buzz (17)',
+              words: [
+                { sentence: 'The soup was too {blank} and lacked any real flavor.', correct: 'watery' },
+                { sentence: 'Plants will {blank} beautifully in well-watered soil.', correct: 'thrive' },
+                { sentence: 'Wash your hands to prevent {blank} of the clean food.', correct: 'contamination' },
+                { sentence: 'Toads {blank} poison from their skin to deter predators.', correct: 'secrete' },
+                { sentence: 'Leave the wet clay out in the hot sun to {blank}.', correct: 'harden' },
+                { sentence: 'The bakery was filled with the {blank} smell of fresh bread.', correct: 'aromatic' },
+                { sentence: 'The farmer happily {blank} the ripe apples from the orchard.', correct: 'harvested' },
+                { sentence: 'The busy factory {blank} thousands of toys every single day.', correct: 'produced' },
+                { sentence: 'The raw materials are {blank} into finished goods by machines.', correct: 'processed' },
+                { sentence: 'Beekeepers wear full {blank} to avoid getting attacked.', correct: 'protective suits' },
+                { sentence: 'A bee can {blank} you if it feels threatened or scared.', correct: 'sting' },
+                { sentence: 'He gave the baseball a hard {blank} with the wooden bat.', correct: 'smack' }
+              ]
+            },
+            'P4_U9_S18': {
+              title: 'Unit 9: When You Laugh',
+              words: [
+                { sentence: 'She has a good {blank} and remembers everyones names.', correct: 'memory' },
+                { sentence: 'When you are feeling sad, remember that {blank}.', correct: 'laughter is the best medicine' },
+                { sentence: 'Taking a deep breath can help to {blank} in your shoulders.', correct: 'release the tension' },
+                { sentence: 'Crying can act as a natural {blank} for your strong emotions.', correct: 'safety valve' },
+                { sentence: 'There was a huge {blank} of traffic on the highway today.', correct: 'build-up' },
+                { sentence: 'Your phone will strongly {blank} when you get a text message.', correct: 'vibrate' },
+                { sentence: 'Traveling overseas alone is a wonderful learning {blank}.', correct: 'experience' },
+                { sentence: 'Running for an hour straight gave me {blank}.', correct: 'a good workout' },
+                { sentence: 'Eating a banana before the race will give you {blank}.', correct: 'an energy boost' },
+                { sentence: 'Humans need to breathe in fresh {blank} to survive.', correct: 'oxygen' },
+                { sentence: 'Plants take in {blank} from the air during photosynthesis.', correct: 'carbon dioxide' }
+              ]
+            }
+          }
+        };
+
+        const MONSTER_DB = [
+          { id: 1, name: 'Ant', sprite: '🐜', tier: 1, value: 20 }, { id: 2, name: 'Spider', sprite: '🕷️', tier: 1, value: 20 },
+          { id: 3, name: 'Snail', sprite: '🐌', tier: 1, value: 20 }, { id: 4, name: 'Mosquito', sprite: '🦟', tier: 1, value: 20 },
+          { id: 5, name: 'Beetle', sprite: '🪲', tier: 1, value: 20 }, { id: 6, name: 'Mouse', sprite: '🐁', tier: 1, value: 20 },
+          { id: 7, name: 'Rat', sprite: '🐀', tier: 1, value: 20 }, { id: 8, name: 'Ladybug', sprite: '🐞', tier: 1, value: 20 },
+          { id: 9, name: 'Caterpillar', sprite: '🐛', tier: 1, value: 20 }, { id: 10, name: 'Cricket', sprite: '🦗', tier: 1, value: 20 },
+          { id: 11, name: 'Turtle', sprite: '🐢', tier: 2, value: 50 }, { id: 12, name: 'Snake', sprite: '🐍', tier: 2, value: 50 },
+          { id: 13, name: 'Lizard', sprite: '🦎', tier: 2, value: 50 }, { id: 14, name: 'Fish', sprite: '🐟', tier: 2, value: 50 },
+          { id: 15, name: 'Frog', sprite: '🐸', tier: 2, value: 50 }, { id: 16, name: 'Crab', sprite: '🦀', tier: 2, value: 50 },
+          { id: 17, name: 'Shrimp', sprite: '🦐', tier: 2, value: 50 }, { id: 18, name: 'Squid', sprite: '🦑', tier: 2, value: 50 },
+          { id: 19, name: 'Octopus', sprite: '🐙', tier: 2, value: 50 }, { id: 20, name: 'Pufferfish', sprite: '🐡', tier: 2, value: 50 },
+          { id: 21, name: 'Dog', sprite: '🐶', tier: 3, value: 100 }, { id: 22, name: 'Cat', sprite: '🐱', tier: 3, value: 100 },
+          { id: 23, name: 'Fox', sprite: '🦊', tier: 3, value: 100 }, { id: 24, name: 'Wolf', sprite: '🐺', tier: 3, value: 100 },
+          { id: 25, name: 'Boar', sprite: '🐗', tier: 3, value: 100 }, { id: 26, name: 'Eagle', sprite: '🦅', tier: 3, value: 100 },
+          { id: 27, name: 'Owl', sprite: '🦉', tier: 3, value: 100 }, { id: 28, name: 'Penguin', sprite: '🐧', tier: 3, value: 100 },
+          { id: 29, name: 'Chicken', sprite: '🐔', tier: 3, value: 100 }, { id: 30, name: 'Duck', sprite: '🦆', tier: 3, value: 100 },
+          { id: 31, name: 'Elephant', sprite: '🐘', tier: 4, value: 200 }, { id: 32, name: 'Rhino', sprite: '🦏', tier: 4, value: 200 },
+          { id: 33, name: 'Hippo', sprite: '🦛', tier: 4, value: 200 }, { id: 34, name: 'Crocodile', sprite: '🐊', tier: 4, value: 200 },
+          { id: 35, name: 'Shark', sprite: '🦈', tier: 4, value: 200 }, { id: 36, name: 'Whale', sprite: '🐳', tier: 4, value: 200 },
+          { id: 37, name: 'Gorilla', sprite: '🦍', tier: 4, value: 200 }, { id: 38, name: 'Bear', sprite: '🐻', tier: 4, value: 200 },
+          { id: 39, name: 'Leopard', sprite: '🐆', tier: 4, value: 200 }, { id: 40, name: 'Giraffe', sprite: '🦒', tier: 4, value: 200 },
+          
+          // Tier 5 (Legendary)
+          { id: 41, name: 'Dragon', sprite: '🐉', tier: 5, value: 1000, habitat: TILE_SKY }, 
+          { id: 42, name: 'Unicorn', sprite: '🦄', tier: 5, value: 1000, habitat: TILE_FOREST },
+          { id: 43, name: 'Phoenix', sprite: '🦚', tier: 5, value: 1000, habitat: TILE_SKY }, 
+          { id: 44, name: 'Griffin', sprite: '🦅', tier: 5, value: 1000, habitat: TILE_SKY },
+          { id: 45, name: 'Kraken', sprite: '🦑', tier: 5, value: 1000, habitat: TILE_WATER }, 
+          { id: 46, name: 'Pegasus', sprite: '🐎', tier: 5, value: 1000, habitat: TILE_SKY },
+          { id: 47, name: 'Leviathan', sprite: '🐋', tier: 5, value: 1000, habitat: TILE_WATER }, 
+          { id: 48, name: 'Cerberus', sprite: '🐺', tier: 5, value: 1000, habitat: TILE_SAND },
+          { id: 49, name: 'Chimera', sprite: '🐐', tier: 5, value: 1000, habitat: TILE_MOUNTAIN }, 
+          { id: 50, name: 'Yeti', sprite: '🦍', tier: 5, value: 1000, habitat: TILE_SNOW }
+        ];
+        const TIER_5_IDS = [41, 42, 43, 44, 45, 46, 47, 48, 49, 50];
+
+        const BALLS = {
+          basic:  { id: 'basic', name: 'Basic Ball', multiplier: 1, cost: 0, icon: '⚪' },
+          super:  { id: 'super', name: 'Super Ball', multiplier: 1.5, cost: 50, icon: '🔵' },
+          ultra:  { id: 'ultra', name: 'Ultra Ball', multiplier: 2.5, cost: 100, icon: '🟡' },
+          master: { id: 'master', name: 'Master Ball', multiplier: 100, cost: 250, icon: '🟣' } 
+        };
+
+        const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
+        
+        const formatTime = (totalSeconds) => {
+            const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
+
+        // --- 3D VIEWER ---
+        const Mystical3DViewer = ({ id, onClose }) => {
+          const mountRef = useRef(null);
+          useEffect(() => {
+            let scene, camera, renderer, model, reqId;
+            let interactFactor = 0;
+
+            const initThree = () => {
+              const THREE = window.THREE;
+              scene = new THREE.Scene(); scene.background = new THREE.Color('#1e293b'); 
+              camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+              camera.position.set(0, 2, 10); camera.lookAt(0, 0, 0);
+
+              renderer = new THREE.WebGLRenderer({ antialias: true });
+              renderer.setSize(300, 300); mountRef.current.appendChild(renderer.domElement);
+
+              const light = new THREE.DirectionalLight(0xffffff, 1); light.position.set(5, 5, 5);
+              scene.add(light); scene.add(new THREE.AmbientLight(0x404040));
+
+              model = new THREE.Group();
+              
+              if (id === 41) { 
+                for(let i=0; i<6; i++) {
+                  let mesh = new THREE.Mesh(new THREE.SphereGeometry(0.8 - i*0.1), new THREE.MeshLambertMaterial({color: 0x22c55e}));
+                  mesh.position.x = i * 1.2 - 3; model.add(mesh);
+                }
+              } else if (id === 42) { 
+                let body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2), new THREE.MeshLambertMaterial({color: 0xffffff}));
+                let horn = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1), new THREE.MeshLambertMaterial({color: 0xfacc15}));
+                horn.position.y = 1.5; body.add(horn); model.add(body);
+              } else if (id === 43) { 
+                let body = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2), new THREE.MeshLambertMaterial({color: 0xef4444}));
+                let wingL = new THREE.Mesh(new THREE.PlaneGeometry(2, 1), new THREE.MeshLambertMaterial({color: 0xf97316, side: THREE.DoubleSide}));
+                wingL.position.x = -1.2; body.add(wingL);
+                let wingR = wingL.clone(); wingR.position.x = 1.2; body.add(wingR); model.add(body);
+              } else if (id === 45 || id === 47) { 
+                let body = new THREE.Mesh(new THREE.SphereGeometry(1.2), new THREE.MeshLambertMaterial({color: 0x3b82f6}));
+                for(let i=0; i<4; i++) {
+                  let t = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.1, 3), new THREE.MeshLambertMaterial({color: 0xa855f7}));
+                  t.position.x = Math.cos(i * Math.PI/2) * 1.5; t.position.z = Math.sin(i * Math.PI/2) * 1.5;
+                  t.rotation.x = Math.PI/4; body.add(t);
+                }
+                model.add(body);
+              } else if (id === 50) { 
+                model.add(new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 1), new THREE.MeshLambertMaterial({color: 0xf8fafc})));
+              } else { 
+                model.add(new THREE.Mesh(new THREE.OctahedronGeometry(1.5), new THREE.MeshLambertMaterial({color: 0xd946ef})));
+              }
+
+              scene.add(model);
+              const animate = () => {
+                reqId = requestAnimationFrame(animate);
+                interactFactor = Math.max(0, interactFactor - 0.02); 
+                let time = Date.now() * 0.003;
+                model.rotation.y += 0.01 + (interactFactor * 0.1);
+                model.position.y = Math.sin(time) * 0.5;
+
+                if (id === 41) model.children.forEach((c, i) => c.position.y = Math.sin(time + i) * (1 + interactFactor));
+                else if (id === 43) model.children[0].children.forEach((w, i) => w.rotation.y = Math.sin(time*3) * (0.5 + interactFactor));
+                else if (id === 42) model.rotation.z = Math.sin(time) * 0.2 + (interactFactor * Math.PI/4);
+                else if (id === 45 || id === 47) model.children[0].children.forEach((t, i) => t.rotation.x = (Math.PI/4) + Math.sin(time + i) * (0.2 + interactFactor));
+                else if (id === 50) model.scale.setScalar(1 + (interactFactor * 0.5));
+
+                renderer.render(scene, camera);
+              };
+              animate();
+              mountRef.current.addEventListener('pointerdown', () => { interactFactor = 1.0; });
+            };
+            initThree();
+
+            return () => {
+              if (reqId) cancelAnimationFrame(reqId);
+              if (renderer) renderer.dispose();
+              if (mountRef.current) mountRef.current.innerHTML = '';
+            };
+          }, [id]);
+
+          return (
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 bg-black bg-opacity-80">
+              <div className="bg-gray-900 border-4 border-purple-500 rounded-2xl p-4 flex flex-col items-center" style={{ boxShadow: '0 0 30px purple' }}>
+                <h2 className="text-2xl font-bold text-yellow-400 mb-2">Mystical Captured!</h2>
+                <p className="text-gray-300 text-sm mb-4">Tap to interact!</p>
+                <div ref={mountRef} className="w-64 h-64 bg-gray-800 rounded-xl overflow-hidden shadow-inner mb-4 touch-none cursor-pointer" />
+                <button onClick={onClose} className="bg-red-600 px-8 py-3 rounded-full text-white font-bold active:bg-red-500">Close Viewer</button>
+              </div>
+            </div>
+          );
+        };
+
+        // --- APP COMPONENT ---
+        const App = () => {
+          const [gameState, setGameState] = useState('SELECTION'); 
+          
+          // Selection State
+          const [selectedLevel, setSelectedLevel] = useState('P3');
+          const [selectedLists, setSelectedLists] = useState(['P3_U4']);
+
+          const [player, setPlayer] = useState({ x: 25, y: 25, dir: 'down' });
+          const [data, setData] = useState({
+            stats: { hp: 100, maxHp: 100, level: 1, xp: 0, gold: 100, hasShip: false, hasPickaxe: false, balloons: 0 }, 
+            inventory: [], balls: { basic: Infinity, super: 10, ultra: 5, master: 1 }, 
+            caughtTier5: [], mistakeLog: [] 
+          });
+          
+          const [playerName, setPlayerName] = useState('');
+          const [secondsPlayed, setSecondsPlayed] = useState(0);
+
+          const [mysticals, setMysticals] = useState([]); 
+          const [battle, setBattle] = useState(null);
+          const [battlePhase, setBattlePhase] = useState(''); 
+          const [inputValue, setInputValue] = useState('');
+          const [message, setMessage] = useState('');
+          const [wordQueue, setWordQueue] = useState([]);
+          const [viewing3D, setViewing3D] = useState(null);
+
+          const canvasRef = useRef(null);
+          const texturesRef = useRef(null);
+          const secondsPlayedRef = useRef(0);
+          const playerNameRef = useRef('');
+
+          useEffect(() => { secondsPlayedRef.current = secondsPlayed; }, [secondsPlayed]);
+          useEffect(() => { playerNameRef.current = playerName; }, [playerName]);
+
+          // LocalStorage init for SLS
+          useEffect(() => {
+            try {
+              const savedData = localStorage.getItem('spellmon_sls_save');
+              if (savedData) {
+                let parsed = JSON.parse(savedData);
+                if (parsed.stats.hasPickaxe === undefined) parsed.stats.hasPickaxe = false;
+                if (parsed.stats.balloons === undefined) parsed.stats.balloons = 0;
+                setData(parsed);
+                if (parsed.playTime) setSecondsPlayed(parsed.playTime);
+                if (parsed.playerName) setPlayerName(parsed.playerName);
+              }
+            } catch(e) { console.warn("Local storage disabled or unavailable."); }
+          }, []);
+
+          // Timer logic & 25m Reminder
+          useEffect(() => {
+            if (gameState === 'SELECTION' || gameState === 'START') return;
+            const interval = setInterval(() => {
+              setSecondsPlayed(prev => {
+                const next = prev + 1;
+                if (next > 25 * 60 && next % 60 === 0) {
+                    showToast("⏳ Reminder: You've been playing for over 25 minutes!");
+                }
+                return next;
+              });
+            }, 1000);
+            return () => clearInterval(interval);
+          }, [gameState]);
+
+          const handleSave = () => {
+            try {
+              localStorage.setItem('spellmon_sls_save', JSON.stringify({
+                  ...data, 
+                  playTime: secondsPlayedRef.current, 
+                  playerName: playerNameRef.current
+              }));
+              showToast("✅ Game Saved to device successfully!");
+            } catch(e) { showToast("❌ Save failed. Browser blocks local storage."); }
+          };
+
+          const handleCopyReport = () => {
+            const report = `Spellmon Player Report\n` +
+                `1. Name: ${playerName || 'Unknown'}\n` +
+                `2. Level: ${data.stats.level}\n` +
+                `3. Play Duration: ${formatTime(secondsPlayed)}\n` +
+                `4. Wrong Words: ${data.mistakeLog.length > 0 ? data.mistakeLog.join(', ') : 'None'}\n` +
+                `5. Mystical Creatures Captured: ${data.caughtTier5.length}/10`;
+
+            const textArea = document.createElement("textarea");
+            textArea.value = report;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) showToast("✅ Report copied to clipboard!");
+                else showToast("❌ Failed to copy report.");
+            } catch (err) {
+                showToast("❌ Error copying report.");
+            }
+            document.body.removeChild(textArea);
+          };
+
+          const changeLevel = (level) => {
+             setSelectedLevel(level);
+             setSelectedLists([Object.keys(ALL_SPELLING_LISTS[level])[0]]);
+          };
+
+          const toggleList = (id) => {
+             setSelectedLists(prev => 
+                prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+             );
+          };
+
+          // Map
+          const mapData = useMemo(() => {
+            let map = [];
+            for (let y = 0; y < MAP_HEIGHT; y++) {
+              let row = [];
+              for (let x = 0; x < MAP_WIDTH; x++) {
+                if (y < 10) row.push(TILE_SNOW);           
+                else if (y > 40) row.push(TILE_SAND);     
+                else if (x < 15) row.push(TILE_WATER);     
+                else {
+                  const r = Math.random();
+                  if (r < 0.2) row.push(TILE_MOUNTAIN); else if (r < 0.5) row.push(TILE_FOREST); else row.push(TILE_GRASS);
+                }
+              }
+              map.push(row);
+            }
+            for(let y = 23; y <= 27; y++) { for(let x = 23; x <= 27; x++) map[y][x] = TILE_PATH; }
+            return map;
+          }, []);
+
+          useEffect(() => { texturesRef.current = generateTextures(); }, []);
+
+          // Mystical Spawner
+          useEffect(() => {
+            if (gameState !== 'EXPLORING') return;
+            setMysticals(prev => {
+              if (prev.length >= 2) return prev;
+              let caught = data.caughtTier5;
+              if (caught.length + prev.length >= 10) return prev; 
+
+              let newM = [...prev];
+              
+              let available = TIER_5_IDS.filter(id => {
+                  if (caught.includes(id)) return false;
+                  if (newM.find(m => m.id === id)) return false;
+                  
+                  let targetHabitat = MONSTER_DB.find(m => m.id === id).habitat;
+                  if (targetHabitat === TILE_SKY && caught.length < 5) return false; 
+                  return true;
+              });
+              
+              while(newM.length < 2 && available.length > 0) {
+                 let idx = Math.floor(Math.random() * available.length);
+                 let targetId = available[idx];
+                 let targetMonster = MONSTER_DB.find(m => m.id === targetId);
+                 let targetHabitat = targetMonster.habitat;
+                 
+                 let validTiles = [];
+                 if (targetHabitat === TILE_SKY) {
+                     for(let y=0; y<MAP_HEIGHT; y++) { for(let x=0; x<MAP_WIDTH; x++) { validTiles.push({x, y}); } }
+                 } else {
+                     for(let y=0; y<MAP_HEIGHT; y++) { for(let x=0; x<MAP_WIDTH; x++) { if (mapData[y][x] === targetHabitat) validTiles.push({x, y}); } }
+                 }
+                 
+                 if (validTiles.length > 0) {
+                   let tile = null;
+                   for(let attempts = 0; attempts < 50; attempts++) {
+                     let candidate = validTiles[Math.floor(Math.random() * validTiles.length)];
+                     let tooClose = newM.some(m => Math.hypot(m.x - candidate.x, m.y - candidate.y) < 25);
+                     if (!tooClose) { tile = candidate; break; }
+                   }
+                   if (!tile) tile = validTiles[Math.floor(Math.random() * validTiles.length)];
+                   newM.push({ x: tile.x, y: tile.y, id: targetId, sprite: targetMonster.sprite, habitat: targetHabitat });
+                   available.splice(idx, 1);
+                 } else {
+                   newM.push({ x: 25, y: 25, id: targetId, sprite: targetMonster.sprite, habitat: targetHabitat });
+                   available.splice(idx, 1);
+                 }
+              }
+              return newM;
+            });
+          }, [gameState, mapData, data.caughtTier5]);
+
+          const showToast = (msg) => { setMessage(msg); setTimeout(() => setMessage(''), 3500); };
+
+          const movePlayer = useCallback((dx, dy) => {
+            if (gameState !== 'EXPLORING') return;
+            setPlayer((prev) => {
+              let newDir = prev.dir;
+              if (dx > 0) newDir = 'right'; if (dx < 0) newDir = 'left';
+              if (dy > 0) newDir = 'down'; if (dy < 0) newDir = 'up';
+
+              const nx = prev.x + dx; const ny = prev.y + dy;
+
+              if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT) {
+                const targetTile = mapData[ny][nx];
+                
+                if (targetTile === TILE_MOUNTAIN && !data.stats.hasPickaxe) {
+                  showToast("You need a Climbing Pickaxe to scale mountains!"); return prev;
+                }
+                if (targetTile === TILE_WATER && !data.stats.hasShip) { 
+                  showToast("You need to purchase a Ship to sail the seas!"); return prev; 
+                }
+
+                const mysticalHere = mysticals.find(m => m.x === nx && m.y === ny);
+                if (mysticalHere) {
+                    if (mysticalHere.habitat === TILE_SKY) showToast("A shadow looms... A creature is in the sky above!");
+                    else showToast("Mystical presence! Press 'A' to search!");
+                } else if ([TILE_GRASS, TILE_FOREST, TILE_SNOW, TILE_SAND, TILE_WATER, TILE_MOUNTAIN].includes(targetTile) && Math.random() < 0.10) {
+                    triggerBattle(null);
+                }
+                return { x: nx, y: ny, dir: newDir };
+              }
+              return { ...prev, dir: newDir };
+            });
+          }, [gameState, mapData, mysticals, data.stats]);
+
+          const generateQuestion = () => {
+            let currentQueue = [...wordQueue];
+            if (currentQueue.length === 0) {
+               const activeWords = selectedLists.flatMap(listId => ALL_SPELLING_LISTS[selectedLevel][listId].words);
+               currentQueue = shuffleArray(activeWords);
+            }
+            const wordData = currentQueue.pop(); setWordQueue(currentQueue); 
+            
+            const wordCount = wordData.correct.split(' ').length;
+            const charCount = wordData.correct.replace(/ /g, '').length;
+            const helper = wordData.correct.split('').map(c => c === ' ' ? ' ' : '_').join(' ') + ` (${wordCount > 1 ? wordCount + ' words, ' : ''}${charCount} letters)`;
+            return { sentence: wordData.sentence, answer: wordData.correct, helper: helper };
+          };
+
+          const triggerBattle = (mysticalTarget) => {
+            setGameState('BATTLING'); setBattlePhase('QUESTION'); setInputValue('');
+            let selectedMonster;
+            let isSkyBattle = false;
+            
+            if (mysticalTarget) {
+              selectedMonster = MONSTER_DB.find(m => m.id === mysticalTarget.id);
+              if (mysticalTarget.habitat === TILE_SKY) isSkyBattle = true;
+            } else {
+              const rand = Math.random(); let tierToSpawn = 1;
+              if (rand > 0.85) tierToSpawn = 4; else if (rand > 0.60) tierToSpawn = 3; else if (rand > 0.35) tierToSpawn = 2;  
+              const availableMonsters = MONSTER_DB.filter(m => m.tier === tierToSpawn);
+              selectedMonster = availableMonsters[Math.floor(Math.random() * availableMonsters.length)];
+            }
+            AudioEngine.playBattleMusic(selectedMonster.tier);
+            setBattle({ monster: selectedMonster, mysticalRef: mysticalTarget || null, isSkyBattle: isSkyBattle, questionData: generateQuestion(), statusText: `A wild ${selectedMonster.name} appeared!`, isStunned: false });
+          };
+
+          const handleActionA = useCallback((e) => {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            if (gameState === 'START') { AudioEngine.init(); setGameState('EXPLORING'); } 
+            else if (gameState === 'EXPLORING') {
+                const mysticalHere = mysticals.find(m => m.x === player.x && m.y === player.y);
+                if (mysticalHere) {
+                    if (mysticalHere.habitat === TILE_SKY) {
+                        if (data.stats.balloons > 0) {
+                            setData(prev => {
+                                let newData = {...prev}; newData.stats.balloons -= 1;
+                                try { 
+                                    localStorage.setItem('spellmon_sls_save', JSON.stringify({
+                                        ...newData, playTime: secondsPlayedRef.current, playerName: playerNameRef.current
+                                    })); 
+                                } catch(e) {}
+                                return newData;
+                            });
+                            showToast("🎈 Used a Hot Air Balloon!");
+                            setTimeout(() => triggerBattle(mysticalHere), 800);
+                        } else {
+                            showToast("It's high in the sky! You need a Hot Air Balloon (2000G)!");
+                        }
+                    } else {
+                        triggerBattle(mysticalHere);
+                    }
+                }
+            }
+          }, [gameState, mysticals, player.x, player.y, data.stats.balloons]);
+
+          const handleFlee = () => {
+            if (Math.random() < 0.5) {
+              setBattlePhase('RESULT'); setBattle(prev => ({ ...prev, statusText: "Got away safely!" }));
+              setTimeout(() => { setGameState('EXPLORING'); setBattle(null); }, 1500);
+            } else {
+              setBattlePhase('RESULT'); setBattle(prev => ({ ...prev, statusText: "Failed to run! The animal attacked!" }));
+              setTimeout(() => {
+                setData(prev => {
+                  let newData = { ...prev }; newData.stats.hp = Math.max(0, newData.stats.hp - 15);
+                  if (newData.stats.hp <= 0) setTimeout(() => setGameState('GAMEOVER'), 500);
+                  else { setBattlePhase('QUESTION'); setBattle(b => ({ ...b, statusText: `${b.monster.name} is waiting...` })); }
+                  return newData;
+                });
+              }, 2000);
+            }
+          };
+
+          const handleSpellSubmit = (e) => {
+            e.preventDefault(); if (!inputValue.trim()) return;
+            const isCorrect = inputValue.trim().toLowerCase() === battle.questionData.answer.toLowerCase();
+            if (isCorrect) {
+              setBattlePhase('CATCH'); setBattle(prev => ({ ...prev, isStunned: true, statusText: `Correct! ${battle.monster.name} is stunned! Catch rate 3x!` }));
+            } else {
+              setInputValue(''); setBattle(prev => ({ ...prev, statusText: `Incorrect! It was "${battle.questionData.answer}".` }));
+              setData(prev => {
+                let newData = { ...prev }; newData.stats.hp = Math.max(0, newData.stats.hp - 20);
+                const word = battle.questionData.answer;
+                if (!newData.mistakeLog.includes(word)) newData.mistakeLog.push(word);
+                setTimeout(() => {
+                  if (newData.stats.hp <= 0) setGameState('GAMEOVER');
+                  else { setBattlePhase('QUESTION'); setBattle(b => ({ ...b, questionData: generateQuestion(), statusText: `${b.monster.name} is waiting...` })); }
+                }, 2500);
+                return newData;
+              });
+            }
+          };
+
+          const throwBall = (ballType) => {
+            if (data.balls[ballType] <= 0 && ballType !== 'basic') return;
+            setData(prev => { let newData = { ...prev }; if (ballType !== 'basic') newData.balls[ballType] -= 1; return newData; });
+
+            const ballData = BALLS[ballType];
+            const baseRates = { 1: 0.9, 2: 0.6, 3: 0.4, 4: 0.25, 5: 0.15 }; 
+            let catchChance = baseRates[battle.monster.tier] * ballData.multiplier;
+            if (battle.isStunned) catchChance *= 3; 
+            
+            setBattlePhase('RESULT'); setBattle(prev => ({ ...prev, statusText: `You threw a ${ballData.name}...` }));
+
+            setTimeout(() => {
+              if (Math.random() < catchChance) {
+                AudioEngine.playSuccess(); setBattle(prev => ({ ...prev, statusText: `Gotcha! ${battle.monster.name} was caught!` }));
+                if (battle.mysticalRef) setMysticals(prev => prev.filter(m => m.id !== battle.mysticalRef.id));
+
+                setTimeout(() => {
+                  setData(prev => {
+                    let updatedData = { ...prev }; updatedData.stats.xp += (battle.monster.tier * 50); 
+                    let newLevel = Math.floor(updatedData.stats.xp / 100) + 1;
+                    if (newLevel > updatedData.stats.level) { updatedData.stats.level = newLevel; updatedData.stats.maxHp += 20; updatedData.stats.hp = updatedData.stats.maxHp; showToast(`Level Up! HP Restored!`); }
+
+                    let triggeredVictory = false;
+                    if (battle.monster.tier === 5 && !updatedData.caughtTier5.includes(battle.monster.id)) {
+                      updatedData.caughtTier5.push(battle.monster.id);
+                      if (updatedData.caughtTier5.length >= 10) triggeredVictory = true; else setViewing3D(battle.monster.id); 
+                    }
+
+                    if (updatedData.inventory.length >= 10) {
+                      updatedData.stats.gold += battle.monster.value; showToast(`Storage full! Auto-sold for ${battle.monster.value} Gold.`);
+                    } else { updatedData.inventory.push({ ...battle.monster, instanceId: Date.now() }); }
+                    
+                    if (triggeredVictory) setGameState('VICTORY'); else { setGameState('EXPLORING'); setBattle(null); }
+                    return updatedData;
+                  });
+                }, 2500);
+              } else {
+                AudioEngine.playSad(); setBattle(prev => ({ ...prev, statusText: `Oh no! ${battle.monster.name} broke free and attacked!` }));
+                setTimeout(() => {
+                  setData(prev => {
+                    let updatedData = { ...prev }; updatedData.stats.hp = Math.max(0, updatedData.stats.hp - 10);
+                    if (updatedData.stats.hp <= 0) setGameState('GAMEOVER');
+                    else { setBattlePhase('QUESTION'); setBattle(b => ({ ...b, isStunned: false, statusText: `The wild ${b.monster.name} is waiting...` })); }
+                    return updatedData;
+                  });
+                }, 2500);
+              }
+            }, 1500);
+          };
+
+          const buyItem = (type, itemKey, cost) => {
+            if (data.stats.gold >= cost) {
+              setData(prev => {
+                let newData = { ...prev }; newData.stats.gold -= cost;
+                if (type === 'ball') { newData.balls[itemKey] += 1; showToast(`Bought a ${BALLS[itemKey].name}!`); } 
+                else if (type === 'potion') { newData.stats.hp = Math.min(newData.stats.maxHp, newData.stats.hp + 50); showToast("Recovered 50 HP."); }
+                else if (type === 'ship') { newData.stats.hasShip = true; showToast("Bought a Ship! You can now sail on water."); }
+                else if (type === 'pickaxe') { newData.stats.hasPickaxe = true; showToast("Bought a Pickaxe! You can now climb mountains."); }
+                else if (type === 'balloon') { newData.stats.balloons += 1; showToast("Bought a Hot Air Balloon!"); }
+                return newData;
+              });
+            } else showToast("Not enough Gold!");
+          };
+
+          const sellMonster = (instanceId, value, name) => {
+            setData(prev => {
+              let newData = { ...prev }; newData.inventory = newData.inventory.filter(m => m.instanceId !== instanceId);
+              newData.stats.gold += value; showToast(`Sold ${name} for ${value} Gold!`); return newData;
+            });
+          };
+
+          useEffect(() => {
+            if (gameState !== 'EXPLORING') return;
+            const canvas = canvasRef.current; if (!canvas || !texturesRef.current) return;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const offsetX = Math.floor(VIEW_WIDTH / 2); const offsetY = Math.floor(VIEW_HEIGHT / 2);
+
+            for (let y = 0; y < VIEW_HEIGHT; y++) {
+              for (let x = 0; x < VIEW_WIDTH; x++) {
+                const mapX = player.x - offsetX + x; const mapY = player.y - offsetY + y;
+                if (mapX >= 0 && mapX < MAP_WIDTH && mapY >= 0 && mapY < MAP_HEIGHT) {
+                  const tile = mapData[mapY][mapX];
+                  let textureCanvas = texturesRef.current.grass;
+                  if (tile === TILE_MOUNTAIN) textureCanvas = texturesRef.current.mountain;
+                  if (tile === TILE_FOREST) textureCanvas = texturesRef.current.forest;
+                  if (tile === TILE_PATH) textureCanvas = texturesRef.current.path;
+                  if (tile === TILE_WATER) textureCanvas = texturesRef.current.water;
+                  if (tile === TILE_SNOW) textureCanvas = texturesRef.current.snow;
+                  if (tile === TILE_SAND) textureCanvas = texturesRef.current.sand;
+                  ctx.drawImage(textureCanvas, x * TILE_SIZE, y * TILE_SIZE);
+                } else { ctx.fillStyle = '#000'; ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE); }
+              }
+            }
+            
+            mysticals.forEach(m => {
+              if (m.habitat === TILE_SKY) return; 
+              const relX = m.x - player.x + offsetX; const relY = m.y - player.y + offsetY;
+              if (relX >= 0 && relX < VIEW_WIDTH && relY >= 0 && relY < VIEW_HEIGHT) {
+                ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse((relX * TILE_SIZE) + TILE_SIZE/2, (relY * TILE_SIZE) + TILE_SIZE/2 + 10, 15, 6, 0, 0, Math.PI*2); ctx.fill();
+                ctx.font = '30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(m.sprite, (relX * TILE_SIZE) + TILE_SIZE/2, (relY * TILE_SIZE) + TILE_SIZE/2);
+              }
+            });
+
+            const currentTile = mapData[player.y] && mapData[player.y][player.x];
+            let playerIcon = '👦';
+            if (currentTile === TILE_WATER) playerIcon = '⛵';
+            else if (currentTile === TILE_MOUNTAIN) playerIcon = '🧗';
+
+            ctx.font = '30px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(playerIcon, (offsetX * TILE_SIZE) + TILE_SIZE/2, (offsetY * TILE_SIZE) + TILE_SIZE/2);
+          }, [player, gameState, mapData, mysticals]);
+
+          const DPadButton = ({ dx, dy, label }) => {
+            const handlePress = useCallback((e) => { if (e.type === 'touchstart' && e.cancelable) e.preventDefault(); movePlayer(dx, dy); }, [dx, dy]);
+            return (
+              <button className="bg-gray-700 active:bg-gray-500 text-white font-bold rounded-xl flex items-center justify-center select-none ios-btn border-b-4 border-gray-900 active:border-b-0 active:translate-y-1" style={{ boxShadow: 'inset 0 4px 6px rgba(255,255,255,0.1), 0 4px 6px rgba(0,0,0,0.5)', width: '100%', height: '100%' }} onTouchStart={handlePress} onMouseDown={handlePress}>
+                <span className="text-2xl sm:text-3xl">{label}</span>
+              </button>
+            );
+          };
+
+          return (
+            <div className="flex flex-col h-[100dvh] bg-gray-900 text-white font-sans overflow-hidden max-w-2xl mx-auto border-x-4 border-gray-800 relative ios-container">
+              
+              {viewing3D && <Mystical3DViewer id={viewing3D} onClose={() => setViewing3D(null)} />}
+
+              <div className="bg-blue-900 p-3 sm:p-4 flex justify-between items-center border-b-4 border-blue-950 shadow-md z-10 shrink-0">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold italic tracking-wide text-yellow-400 drop-shadow-md">Spellmon</h1>
+                  <div className="text-xs sm:text-sm">Gold: <span className="text-yellow-300 font-bold">{data.stats.gold}</span> | Mystical: <span className="text-pink-300 font-bold">{data.caughtTier5.length}/10</span></div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm sm:text-base font-bold text-red-400">HP: {data.stats.hp}/{data.stats.maxHp}</div>
+                  <div className="w-24 sm:w-32 h-2 sm:h-3 bg-gray-900 mt-1 rounded overflow-hidden"><div className="h-full bg-green-400" style={{ width: `${Math.max(0, (data.stats.hp / data.stats.maxHp) * 100)}%` }}></div></div>
+                  <div className="text-xs mt-1 text-blue-200">Level {data.stats.level}</div>
+                </div>
+              </div>
+
+              {message && <div className="absolute top-24 left-0 w-full z-50 p-4 pointer-events-none flex justify-center"><div className="bg-yellow-400 text-black text-center p-3 rounded-lg shadow-xl font-bold border-2 border-black animate-pulse max-w-sm w-full">{message}</div></div>}
+
+              <div className="flex-1 relative bg-black flex flex-col overflow-hidden">
+                
+                {/* FRONT SELECTION SCREEN */}
+                {gameState === 'SELECTION' && (
+                  <div className="flex-1 bg-gray-800 p-6 flex flex-col items-center justify-start overflow-y-auto custom-scroll">
+                    <h1 className="font-bold text-yellow-400 mt-4 mb-4 text-center" style={{ fontSize: '3.5rem', textShadow: '2px 2px 8px rgba(0,0,0,0.8)' }}>SPELLMON</h1>
+                    <p className="text-gray-300 mb-6 text-center text-lg max-w-md">Select one or more Spelling Lists to build your battle deck!</p>
+                    
+                    {/* Level Tabs */}
+                    <div className="flex w-full max-w-lg mb-4 rounded-xl overflow-hidden border-2 border-gray-600 shadow-md shrink-0">
+                       <button onClick={() => changeLevel('P3')} className={`flex-1 py-3 font-bold text-lg transition-colors ${selectedLevel === 'P3' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>Primary 3</button>
+                       <button onClick={() => changeLevel('P4')} className={`flex-1 py-3 font-bold text-lg transition-colors ${selectedLevel === 'P4' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>Primary 4</button>
+                    </div>
+
+                    {/* List Toggle Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8">
+                      {Object.keys(ALL_SPELLING_LISTS[selectedLevel]).map(key => {
+                         const isSelected = selectedLists.includes(key);
+                         return (
+                            <button 
+                               key={key} 
+                               onClick={() => toggleList(key)} 
+                               className={`p-4 rounded-xl border-2 shadow-md flex items-center justify-between ios-btn transition-colors text-left ${isSelected ? 'bg-green-700 border-green-400' : 'bg-gray-700 border-gray-600'}`}
+                            >
+                               <span className={`font-bold text-sm sm:text-base ${isSelected ? 'text-white' : 'text-gray-300'}`}>{ALL_SPELLING_LISTS[selectedLevel][key].title}</span>
+                               {isSelected && <span className="text-2xl ml-2 shrink-0">✅</span>}
+                            </button>
+                         );
+                      })}
+                    </div>
+
+                    <button 
+                      disabled={selectedLists.length === 0}
+                      className={`px-12 py-5 rounded-full font-bold text-2xl border-4 shadow-xl mb-8 ios-btn shrink-0 ${selectedLists.length > 0 ? 'bg-red-600 text-white border-red-800 hover:bg-red-500 active:scale-95' : 'bg-gray-600 text-gray-400 border-gray-700 opacity-50'}`} 
+                      style={{ boxShadow: selectedLists.length > 0 ? '0 0 20px rgba(220,38,38,0.5)' : 'none' }} 
+                      onClick={() => { setWordQueue([]); setGameState('START'); }}
+                    >
+                      CONTINUE
+                    </button>
+                  </div>
+                )}
+
+                {gameState === 'START' && (
+                  <div className="text-center p-6 z-10 w-full h-full bg-gray-900 flex flex-col items-center justify-center">
+                    <h1 className="font-bold text-yellow-400 mb-2" style={{ fontSize: '3.5rem', textShadow: '2px 2px 8px rgba(0,0,0,0.8)' }}>SPELLMON</h1>
+                    <p className="mb-4 text-green-300 font-bold text-xl">Grand Explorer Edition</p>
+                    <p className="mb-10 text-sm sm:text-base text-gray-400 max-w-md">Buy a ship to explore the oceans. Buy a pickaxe to scale mountains. Buy a Balloon to reach the sky.<br/><br/><span className="text-pink-400 font-bold text-lg">OBJECTIVE: Capture all 10 Mystical Animals!</span></p>
+                    <button className="bg-red-600 hover:bg-red-500 text-white px-10 py-5 rounded-full font-bold text-2xl border-4 border-red-800 active:scale-95 transition-transform ios-btn" style={{ boxShadow: '0 0 20px rgba(220,38,38,0.5)' }} onClick={handleActionA}>START EXPLORING</button>
+                  </div>
+                )}
+
+                {gameState === 'EXPLORING' && (
+                  <div className="flex-1 flex items-center justify-center bg-gray-800 relative">
+                    <canvas ref={canvasRef} width={VIEW_WIDTH * TILE_SIZE} height={VIEW_HEIGHT * TILE_SIZE} className="image-pixelated border-4 border-gray-700 bg-black" style={{ width: '100%', maxWidth: '520px', aspectRatio: '1/1', boxShadow: '0 0 30px rgba(0,0,0,0.8)' }} />
+                    
+                    {/* TIMER */}
+                    <div className="absolute top-4 left-4 bg-gray-900 bg-opacity-80 border-2 border-gray-500 rounded px-3 py-1 shadow-[0_0_10px_rgba(0,0,0,0.5)] z-10 pointer-events-none flex items-center gap-2 text-yellow-400 font-mono font-bold text-sm sm:text-base">
+                      ⏱ {formatTime(secondsPlayed)}
+                    </div>
+
+                    <div className="absolute top-4 right-4 w-24 h-24 sm:w-32 sm:h-32 border-4 border-green-500 rounded z-10 overflow-hidden pointer-events-none bg-green-900 bg-opacity-80" style={{ boxShadow: '0 0 15px green' }}>
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(0deg,transparent 24%,rgba(0,255,0,0.4) 25%,rgba(0,255,0,0.4) 26%,transparent 27%,transparent 74%,rgba(0,255,0,0.4) 75%,rgba(0,255,0,0.4) 76%,transparent 77%,transparent)', backgroundSize: '1rem 1rem' }} />
+                      <div className="absolute w-3 h-3 bg-white rounded-full" style={{ left: `${(player.x / MAP_WIDTH) * 100}%`, top: `${(player.y / MAP_HEIGHT) * 100}%`, transform: 'translate(-50%, -50%)', boxShadow: '0 0 8px white' }} />
+                      {mysticals.map(m => <div key={m.id} className="absolute bg-pink-500 w-3 h-3 rounded-full animate-ping" style={{ left: `${(m.x / MAP_WIDTH) * 100}%`, top: `${(m.y / MAP_HEIGHT) * 100}%`, transform: 'translate(-50%, -50%)', boxShadow: '0 0 12px magenta' }} />)}
+                    </div>
+                  </div>
+                )}
+
+                {gameState === 'MENU' && (
+                  <div className="flex-1 bg-gray-800 p-4 sm:p-6 overflow-y-auto custom-scroll">
+                    <div className="flex justify-between items-center border-b-2 border-blue-500 pb-2 mb-4">
+                       <h2 className="text-lg sm:text-xl font-bold text-blue-400">Loaded: {selectedLists.length} List(s)</h2>
+                       <button onClick={() => setGameState('SELECTION')} className="bg-blue-600 px-4 py-2 rounded text-white font-bold text-sm shadow active:bg-blue-500 ios-btn">Change Lists</button>
+                    </div>
+
+                    <h2 className="text-xl font-bold text-red-400 mb-2 border-b-2 border-red-500 pb-1">Mistake Log</h2>
+                    <div className="mb-6 flex flex-wrap gap-2">{data.mistakeLog.length === 0 ? <p className="text-gray-500 text-sm">No mistakes yet! Great job.</p> : data.mistakeLog.map((word, i) => <span key={i} className="text-red-200 px-3 py-1 rounded font-bold border border-red-700 bg-red-900 bg-opacity-50">{word}</span>)}</div>
+                    
+                    {/* PLAYER REPORT BOX */}
+                    <div className="bg-gray-700 p-4 rounded-xl border-2 border-gray-600 mb-8 shadow-md">
+                      <h3 className="text-lg font-bold text-white mb-2">Player Report</h3>
+                      <input 
+                          type="text" 
+                          placeholder="Enter your Name" 
+                          value={playerName} 
+                          onChange={e => setPlayerName(e.target.value)} 
+                          className="w-full p-3 rounded-lg text-black font-bold mb-3 shadow-inner focus:outline-none focus:ring-4 focus:ring-blue-500"
+                      />
+                      <button 
+                          className="bg-blue-600 px-4 py-3 rounded-lg text-white font-bold w-full shadow-md active:bg-blue-500 ios-btn flex items-center justify-center gap-2"
+                          onClick={handleCopyReport}
+                      >
+                          📋 Copy Report
+                      </button>
+                    </div>
+
+                    <h2 className="text-xl font-bold text-pink-400 mb-2 border-b-2 border-pink-500 pb-1">Mystical Log ({data.caughtTier5.length}/10)</h2>
+                    <p className="text-xs text-gray-400 mb-2">Tap a captured creature to view it in 3D!</p>
+                    <div className="flex flex-wrap gap-2 sm:gap-4 mb-8">
+                      {MONSTER_DB.filter(m => m.tier === 5).map(m => {
+                        const isCaught = data.caughtTier5.includes(m.id);
+                        return ( <div key={m.id} onClick={() => { if(isCaught) setViewing3D(m.id); }} className={`w-14 h-14 sm:w-16 sm:h-16 bg-gray-900 rounded-lg flex items-center justify-center text-3xl border-2 shadow-inner ${isCaught ? 'border-pink-500 cursor-pointer active:scale-95' : 'border-gray-700'}`}><span className={isCaught ? '' : 'opacity-20 grayscale'}>{m.sprite}</span></div> );
+                      })}
+                    </div>
+
+                    <h2 className="text-xl font-bold text-yellow-400 mb-2 border-b-2 border-yellow-400 pb-1">Storage PC ({data.inventory.length}/10)</h2>
+                    {data.inventory.length === 0 ? <p className="text-center text-gray-500 mt-10 text-lg">Your storage is empty.</p> : (
+                      <div className="space-y-3 pb-4">
+                        {data.inventory.map((mon) => (
+                          <div key={mon.instanceId} className="bg-gray-700 p-4 rounded-lg border-2 border-gray-600 flex justify-between items-center shadow-md">
+                            <div className="flex items-center gap-4"><div className="text-4xl bg-gray-800 p-2 rounded-lg">{mon.sprite}</div><div><div className="font-bold text-xl">{mon.name}</div><div className="text-sm text-gray-300">Tier {mon.tier} | Value: <span className="text-yellow-400">{mon.value}G</span></div></div></div>
+                            <button className="bg-red-600 px-4 py-3 rounded-lg font-bold shadow-md active:bg-red-500 ios-btn" onClick={() => sellMonster(mon.instanceId, mon.value, mon.name)}>Sell</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {gameState === 'SHOP' && (
+                  <div className="flex-1 bg-blue-900 p-4 sm:p-6 overflow-y-auto custom-scroll">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2 border-b-2 border-blue-400 pb-2">PokéMart</h2>
+                    <div className="space-y-4">
+                      
+                      {!data.stats.hasShip && (
+                        <div className="bg-indigo-800 p-4 rounded-lg border-2 border-indigo-700 flex justify-between items-center shadow-lg">
+                          <div className="flex items-center gap-4"><div className="text-4xl">⛵</div><div><div className="font-bold text-xl text-indigo-200">Sailing Ship</div><div className="text-sm text-indigo-300">Explore the oceans!</div></div></div>
+                          <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= 500 ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('ship', null, 500)}>500 G</button>
+                        </div>
+                      )}
+                      
+                      {!data.stats.hasPickaxe && (
+                        <div className="bg-stone-800 p-4 rounded-lg border-2 border-stone-700 flex justify-between items-center shadow-lg">
+                          <div className="flex items-center gap-4"><div className="text-4xl">⛏️</div><div><div className="font-bold text-xl text-stone-200">Climbing Pickaxe</div><div className="text-sm text-stone-300">Scale the high peaks!</div></div></div>
+                          <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= 1500 ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('pickaxe', null, 1500)}>1500 G</button>
+                        </div>
+                      )}
+
+                      <div className="bg-sky-800 p-4 rounded-lg border-2 border-sky-700 flex justify-between items-center shadow-lg">
+                        <div className="flex items-center gap-4"><div className="text-4xl">🎈</div><div><div className="font-bold text-xl text-sky-200">Hot Air Balloon</div><div className="text-sm text-sky-300">Reach the sky! Owned: {data.stats.balloons}</div></div></div>
+                        <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= 2000 ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('balloon', null, 2000)}>2000 G</button>
+                      </div>
+
+                      <div className="bg-blue-800 p-4 rounded-lg border-2 border-blue-700 flex justify-between items-center shadow-lg">
+                        <div className="flex items-center gap-4"><div className="text-4xl">🍎</div><div><div className="font-bold text-xl">Health Potion</div><div className="text-sm text-blue-300">Heals 50 HP</div></div></div>
+                        <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= 20 ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('potion', null, 20)}>20 G</button>
+                      </div>
+                      
+                      {['super', 'ultra', 'master'].map(ball => (
+                        <div className="bg-blue-800 p-4 rounded-lg border-2 border-blue-700 flex justify-between items-center shadow-lg" key={ball}>
+                          <div className="flex items-center gap-4"><div className="text-4xl">{BALLS[ball].icon}</div><div><div className="font-bold text-xl">{BALLS[ball].name}</div><div className="text-sm text-blue-300">You have: {data.balls[ball]}</div></div></div>
+                          <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= BALLS[ball].cost ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('ball', ball, BALLS[ball].cost)}>{BALLS[ball].cost} G</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {gameState === 'BATTLING' && battle && (
+                  <div className="absolute inset-0 bg-gray-100 flex flex-col z-20">
+                    <div className={`flex flex-col items-center justify-center relative border-b-8 border-gray-800 p-4 shadow-inner ${battle.isSkyBattle ? 'bg-gradient-to-b from-blue-300 to-blue-500' : 'bg-gradient-to-b from-green-200 to-teal-400'}`} style={{ height: '40%' }}>
+                      <div className="absolute top-4 left-4 bg-white text-black px-4 py-2 border-2 border-black rounded-lg shadow-md">
+                        <p className="font-bold text-lg sm:text-xl flex items-center gap-2">{battle.monster.name} <span className={`text-sm px-2 py-1 rounded text-white ${battle.monster.tier === 5 ? 'bg-pink-600' : 'bg-gray-600'}`}>Tier {battle.monster.tier}</span></p>
+                      </div>
+                      <div className={`animate-bounce drop-shadow-2xl ${battle.isStunned ? 'opacity-50 grayscale' : ''}`} style={{ fontSize: '8rem' }}>{battle.monster.sprite}</div>
+                    </div>
+
+                    <div className="p-4 flex flex-col shrink-0" style={{ height: '60%' }}>
+                      <div className="bg-white border-4 border-gray-800 rounded-xl p-4 mb-4 text-black font-bold shadow-md flex items-center min-h-[4rem]"><p className="text-lg sm:text-xl text-center w-full">{battle.statusText}</p></div>
+
+                      {battlePhase === 'QUESTION' && (
+                        <div className="flex-1 flex flex-col justify-between">
+                          <div className="bg-green-900 text-white p-6 rounded-xl border-4 border-green-900 flex flex-col items-center justify-center text-center shadow-lg flex-1">
+                            <p className="font-bold text-xl sm:text-2xl mb-4 leading-relaxed">{battle.questionData.sentence.replace('{blank}', '________')}</p>
+                            <p className="text-base text-yellow-300 mb-6 tracking-widest font-mono bg-black bg-opacity-40 px-4 py-2 rounded-lg">Hint: {battle.questionData.helper}</p>
+                            <form onSubmit={handleSpellSubmit} className="w-full flex gap-3">
+                              <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Type answer here..." autoCapitalize="none" autoComplete="off" autoCorrect="off" spellCheck="false" className="flex-1 p-4 rounded-xl text-black font-black text-center border-4 border-gray-400 text-xl sm:text-2xl shadow-inner focus:outline-none focus:ring-4 focus:ring-blue-500" />
+                              <button type="submit" className="bg-blue-600 px-8 py-4 rounded-xl text-white font-black text-xl shadow-md active:bg-blue-500 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 ios-btn">GO</button>
+                            </form>
+                          </div>
+                          <div className="w-full flex gap-4 mt-4 shrink-0">
+                            <button type="button" onClick={() => setBattlePhase('CATCH')} className="flex-1 bg-yellow-500 p-4 rounded-xl text-black font-black text-lg shadow-md active:bg-yellow-400 border-b-4 border-yellow-700 active:border-b-0 active:translate-y-1 ios-btn">🎒 OPEN BAG</button>
+                            <button type="button" onClick={handleFlee} className="flex-1 bg-gray-600 p-4 rounded-xl text-white font-black text-lg shadow-md active:bg-gray-500 border-b-4 border-gray-800 active:border-b-0 active:translate-y-1 ios-btn">🏃 FLEE</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {battlePhase === 'CATCH' && (
+                        <div className="flex-1 bg-gray-800 p-4 rounded-xl border-4 border-gray-900 flex flex-col gap-4">
+                          <div className="grid grid-cols-2 gap-4 flex-1">
+                            {Object.keys(BALLS).map(b => (
+                              <button key={b} className={`rounded-xl p-4 text-lg font-bold flex flex-col items-center justify-center border-b-4 shadow-md ios-btn active:border-b-0 active:translate-y-1 ${data.balls[b] > 0 || b === 'basic' ? 'bg-gray-100 hover:bg-gray-200 text-black border-gray-400' : 'bg-gray-600 text-gray-400 border-gray-700 opacity-50'}`} onClick={() => throwBall(b)} disabled={data.balls[b] <= 0 && b !== 'basic'}>
+                                <span className="text-4xl mb-2">{BALLS[b].icon}</span><span>{BALLS[b].name}</span><span className="text-sm font-normal">x{b === 'basic' ? '∞' : data.balls[b]}</span>
+                              </button>
+                            ))}
+                          </div>
+                          <button onClick={() => setBattlePhase('QUESTION')} className="w-full bg-red-600 p-4 rounded-xl text-white font-black text-lg shadow-md active:bg-red-500 border-b-4 border-red-800 active:border-b-0 active:translate-y-1 ios-btn">BACK TO BATTLE</button>
+                        </div>
+                      )}
+
+                      {battlePhase === 'RESULT' && <div className="flex-1 bg-gray-800 rounded-xl border-4 border-gray-900 flex items-center justify-center"><div className="animate-spin" style={{ fontSize: '5rem' }}>🌀</div></div>}
+                    </div>
+                  </div>
+                )}
+
+                {gameState === 'GAMEOVER' && (
+                  <div className="absolute inset-0 bg-red-900 flex flex-col items-center justify-center z-30 p-6 text-center">
+                    <h1 className="text-6xl font-bold text-white mb-6">BLACKED OUT</h1>
+                    <p className="text-xl text-gray-300 mb-10">Your HP reached zero.</p>
+                    <button className="bg-white text-red-900 font-bold px-10 py-5 rounded-full border-4 border-gray-300 active:bg-gray-200 text-2xl shadow-xl ios-btn" onClick={() => {
+                        setData(prev => { let rData = { ...prev }; rData.stats.hp = 100; rData.stats.maxHp = 100; return rData; });
+                        setPlayer({ x: 25, y: 25, dir: 'down' }); setGameState('EXPLORING');
+                    }}>Restart Journey</button>
+                  </div>
+                )}
+
+                {gameState === 'VICTORY' && (
+                  <div className="absolute inset-0 bg-yellow-500 flex flex-col items-center justify-center z-30 p-6 text-center animate-pulse">
+                    <div className="bg-white p-10 rounded-2xl border-8 border-yellow-700 shadow-2xl max-w-lg">
+                      <h1 className="text-5xl font-black text-pink-700 mb-6">VICTORY!</h1>
+                      <div className="text-7xl mb-8">🐉🦄🦑🦅🐎</div>
+                      <p className="text-black font-bold mb-8 text-xl">You captured all 10 Mystical Animals and mastered your spelling words!</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* BOTTOM CONTROLS */}
+              {gameState !== 'SELECTION' && (
+              <div className="bg-gray-800 p-4 sm:p-6 border-t-4 border-gray-900 flex justify-between items-center h-56 sm:h-64 shrink-0 z-10" style={{ boxShadow: '0 -10px 20px rgba(0,0,0,0.3)' }}>
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 w-48 sm:w-56 h-48 sm:h-56">
+                  <div /> <DPadButton dx={0} dy={-1} label="▲" /> <div />
+                  <DPadButton dx={-1} dy={0} label="◀" />
+                  <div className="bg-gray-900 rounded-xl flex items-center justify-center text-sm text-gray-700 shadow-inner">o</div>
+                  <DPadButton dx={1} dy={0} label="▶" />
+                  <div /> <DPadButton dx={0} dy={1} label="▼" /> <div />
+                </div>
+
+                <div className="flex flex-col gap-3 w-40 sm:w-48 h-full justify-between items-end">
+                  <div className="flex w-full justify-between gap-2">
+                    <button className="flex-1 bg-blue-600 rounded-lg text-white text-xs sm:text-sm font-bold py-3 shadow-md active:bg-blue-500 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 ios-btn" onClick={() => setGameState(gameState === 'SHOP' ? 'EXPLORING' : 'SHOP')} disabled={gameState === 'BATTLING'}>{gameState === 'SHOP' ? 'CLOSE' : 'SHOP'}</button>
+                    <button className="flex-1 bg-pink-600 rounded-lg text-white text-xs sm:text-sm font-bold py-3 shadow-md active:bg-pink-500 border-b-4 border-pink-800 active:border-b-0 active:translate-y-1 ios-btn" onClick={() => setGameState(gameState === 'MENU' ? 'EXPLORING' : 'MENU')} disabled={gameState === 'BATTLING'}>{gameState === 'MENU' ? 'CLOSE' : 'PC'}</button>
+                    <button className="flex-1 bg-green-600 rounded-lg text-white text-xs sm:text-sm font-bold py-3 shadow-md active:bg-green-500 border-b-4 border-green-800 active:border-b-0 active:translate-y-1 ios-btn" onClick={handleSave} disabled={gameState === 'BATTLING'}>SAVE</button>
+                  </div>
+                  <button className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-green-500 border-b-8 border-green-700 shadow-xl flex items-center justify-center text-green-100 font-bold text-4xl active:translate-y-2 active:border-b-0 self-end ios-btn" onClick={handleActionA}>A</button>
+                </div>
+              </div>
+              )}
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
