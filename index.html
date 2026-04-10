@@ -4,24 +4,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Spellmon - Web Edition</title>
+    <title>Spellmon V1</title>
     
-    <!-- Static CSS to bypass SLS/GitHub security blocks -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     
-    <!-- Upgraded to highly-reliable CDNJS -->
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
         html, body, #root { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #111827; overscroll-behavior-y: none; }
-        body { -webkit-overflow-scrolling: touch; }
-        .ios-container { height: 100%; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; }
+        body { -webkit-overflow-scrolling: touch; overflow: hidden; }
+        .ios-container { height: 100%; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; display: flex; flex-direction: column; overflow: hidden; }
         .ios-btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
+        @keyframes slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .animate-slide-up { animation: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         .image-pixelated { image-rendering: pixelated; }
         input[type="text"] { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; } 
         .custom-scroll::-webkit-scrollbar { width: 6px; }
@@ -29,26 +29,10 @@
     </style>
 </head>
 <body>
-    <div id="root">
-        <!-- Safety Loading Screen to prevent blank white screens -->
-        <div style="color: white; text-align: center; padding-top: 30vh; font-family: sans-serif;">
-            <h2 style="font-size: 2.5rem; color: #facc15; margin-bottom: 10px;">Loading Spellmon...</h2>
-            <p style="color: #9ca3af;">Please wait while the game engine boots up.</p>
-        </div>
-    </div>
-
-    <!-- Global Error Catcher -->
-    <script>
-        window.onerror = function(msg, url, lineNo, columnNo, error) {
-            document.getElementById('root').innerHTML = 
-                '<div style="color: #fca5a5; padding: 30px; font-family: sans-serif; text-align: center; margin-top: 20vh;">' +
-                '<h3 style="font-size: 2rem;">Game Engine Error</h3><p>' + msg + '</p></div>';
-            return false;
-        };
-    </script>
+    <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback, Fragment } = React;
 
         // --- GAME CONSTANTS ---
         const TILE_SIZE = 40; 
@@ -112,287 +96,26 @@
         // --- ALL SPELLING LISTS (P3 & P4) ---
         const ALL_SPELLING_LISTS = {
           P3: {
-            'P3_U4': {
-              title: 'Unit 4: Predators & Prey',
-              words: [
-                { sentence: 'The animals that predators hunt are called {blank}.', correct: 'prey' },
-                { sentence: 'In order to {blank}, living things need air, food and water.', correct: 'survive' },
-                { sentence: 'Lions are predators with incredible {blank} and fierce nature.', correct: 'strength' },
-                { sentence: "The panda's natural {blank} is the bamboo forest.", correct: 'habitat' },
-                { sentence: 'Pufferfish may be cute looking but they are extremely {blank}.', correct: 'poisonous' },
-                { sentence: 'The bald eagle uses its sharp {blank} to swoop down and catch a fish.', correct: 'talons' },
-                { sentence: 'A porcupine has {blank} to help it stay safe from being attacked.', correct: 'quills' },
-                { sentence: 'Grey wolves often {blank} to bring down large animals like deer.', correct: 'hunt in packs' },
-                { sentence: 'Some animals play dead as this tactic {blank} them from being eaten.', correct: 'protects' },
-                { sentence: 'Stonefish are masters of {blank} and can blend into their surroundings.', correct: 'camouflage' }
-              ]
-            },
-            'P3_U5': {
-              title: 'Unit 5: Stars of Chek Jawa',
-              words: [
-                { sentence: 'Tigers can be found in forests and {blank}.', correct: 'mangroves' },
-                { sentence: 'A {blank} of a thousand miles begins with a single step.', correct: 'journey' },
-                { sentence: '{blank} are home to a great variety of plants and animals.', correct: 'Habitats' },
-                { sentence: 'The {blank} in Indonesia have caused serious air pollution problems.', correct: 'forest fires' },
-                { sentence: 'Animal {blank} is the travelling of long distances in search of a new habitat.', correct: 'migration' },
-                { sentence: 'We can walk along the {blank} in the nature reserve to appreciate the animals.', correct: 'boardwalk' },
-                { sentence: 'Sea stars have neither scales nor {blank}.', correct: 'backbones' },
-                { sentence: 'The tube feet found {blank} the sea stars body help it to move around.', correct: 'underneath' },
-                { sentence: 'The sea stars have an amazing ability to regrow their arms for {blank}.', correct: 'regeneration' },
-                { sentence: 'With so many areas of woodland being cut down, a lot of {blank} is losing its home.', correct: 'wildlife' }
-              ]
-            },
-            'P3_U6': {
-              title: 'Unit 6: Unusual Plants',
-              words: [
-                { sentence: 'The {blank} works like a vacuum cleaner.', correct: 'bladderwort' },
-                { sentence: 'Some plants have developed {blank} ways of surviving.', correct: 'unique' },
-                { sentence: 'We can think of ways to {blank} and overcome challenges.', correct: 'adapt' },
-                { sentence: 'The most well-known {blank} plant is the Venus Flytrap.', correct: 'carnivorous' },
-                { sentence: 'The Venus Flytrap has {blank} coloured leaves that attract insects.', correct: 'vibrant' },
-                { sentence: 'The Venus Flytrap releases special juices to {blank} the insects.', correct: 'digest' },
-                { sentence: 'The more the insect {blank}, the deeper it sinks.', correct: 'struggles' },
-                { sentence: 'The Rafflesia lives as a {blank} on another plant.', correct: 'parasite' },
-                { sentence: 'The Rafflesia {blank} its host plant but does not kill it.', correct: 'weakens' },
-                { sentence: 'The lip of the pitcher plant is {blank}.', correct: 'slippery' }
-              ]
-            },
-            'P3_U7': {
-              title: "Unit 7: Boy Under The Bed",
-              words: [
-                { sentence: 'Smook slid over to the {blank} of the bed.', correct: 'edge' },
-                { sentence: 'Smook sat {blank} on his bed when his mother told him there was no ghost.', correct: 'quivering' },
-                { sentence: 'I hope to make a {blank} to the lives of others.', correct: 'difference' },
-                { sentence: 'As the door {blank} open in the middle of the night...', correct: 'squeaked' },
-                { sentence: 'The professional dancers amazed us when they flip-flopped backwards {blank}.', correct: 'effortlessly' },
-                { sentence: 'The stray cat was {blank} from the lack of food.', correct: 'scrawny' },
-                { sentence: 'We were being {blank} into the train when it arrived.', correct: 'shoved' },
-                { sentence: 'Tony {blank} his shoulders as he did not know the answer too.', correct: 'shrugged' },
-                { sentence: 'Smook felt {blank} that the boy was not scared of him.', correct: 'disappointed' },
-                { sentence: 'He took a deep breath and then slowly {blank} over the side.', correct: 'leaned' }
-              ]
-            },
-            'P3_U8': {
-              title: 'Unit 8: Prince Zak',
-              words: [
-                { sentence: 'The sneaky robber walked {blank} around the house so he would not be caught.', correct: 'warily' },
-                { sentence: 'The wise frog hid amongst the weeds and {blank} watched the prince.', correct: 'keenly' },
-                { sentence: 'The ball that James dropped was {blank} up and down in the water.', correct: 'bobbing' },
-                { sentence: 'Jonathan has turned over a new leaf and been on his best {blank} lately.', correct: 'behaviour' },
-                { sentence: 'My plants died because I {blank} watering them for weeks.', correct: 'neglected' },
-                { sentence: 'Sarah quickly rushed back to the store to {blank} her wallet.', correct: 'retrieve' },
-                { sentence: 'Her diamond necklace {blank} under the sun, attracting attention.', correct: 'gleamed' },
-                { sentence: 'We are {blank} to have Mrs Tan as our teacher as she is kind and caring.', correct: 'fortunate' },
-                { sentence: 'Peter stared {blank} out the window, upset that his game was cancelled.', correct: 'dejectedly' },
-                { sentence: 'Jenny squealed with {blank} when she saw her brand new bicycle.', correct: 'excitement' }
-              ]
-            },
-            'P3_U9': {
-              title: 'Unit 9: Spilt Milk',
-              words: [
-                { sentence: 'The tourists were frantically snapping photos as the ferry cruised along the {blank}.', correct: 'riverbank' },
-                { sentence: 'Dinesh and Jamal were always looking for some {blank} when they travel.', correct: 'adventure' },
-                { sentence: 'Sally {blank} and rolled out of the bed when her mother woke her up early.', correct: 'moaned' },
-                { sentence: 'The magician made the rabbit {blank} with a quick wave of his magic wand.', correct: 'disappear' },
-                { sentence: '"We did it!" Betsy {blank} as we caught our breath.', correct: 'exclaimed' },
-                { sentence: 'You should always keep your {blank} on when you are on the boat.', correct: 'life jacket' },
-                { sentence: 'The natural {blank} left a huge number of people homeless.', correct: 'disaster' },
-                { sentence: '"Watch out! You nearly {blank} me in the eye with your umbrella."', correct: 'jabbed' },
-                { sentence: 'There were many boats lined up at Bedok {blank}.', correct: 'jetty' },
-                { sentence: 'Running along the beach, she {blank} on a log and fell on the sand.', correct: 'stumbled' }
-              ]
-            }
+            'P3_U4': { title: 'Unit 4: Predators & Prey', words: [ { sentence: 'The animals that predators hunt are called {blank}.', correct: 'prey' }, { sentence: 'In order to {blank}, living things need air, food and water.', correct: 'survive' }, { sentence: 'Lions are predators with incredible {blank} and fierce nature.', correct: 'strength' }, { sentence: "The panda's natural {blank} is the bamboo forest.", correct: 'habitat' }, { sentence: 'Pufferfish may be cute looking but they are extremely {blank}.', correct: 'poisonous' }, { sentence: 'The bald eagle uses its sharp {blank} to swoop down and catch a fish.', correct: 'talons' }, { sentence: 'A porcupine has {blank} to help it stay safe from being attacked.', correct: 'quills' }, { sentence: 'Grey wolves often {blank} to bring down large animals like deer.', correct: 'hunt in packs' }, { sentence: 'Some animals play dead as this tactic {blank} them from being eaten.', correct: 'protects' }, { sentence: 'Stonefish are masters of {blank} and can blend into their surroundings.', correct: 'camouflage' } ] },
+            'P3_U5': { title: 'Unit 5: Stars of Chek Jawa', words: [ { sentence: 'Tigers can be found in forests and {blank}.', correct: 'mangroves' }, { sentence: 'A {blank} of a thousand miles begins with a single step.', correct: 'journey' }, { sentence: '{blank} are home to a great variety of plants and animals.', correct: 'Habitats' }, { sentence: 'The {blank} in Indonesia have caused serious air pollution problems.', correct: 'forest fires' }, { sentence: 'Animal {blank} is the travelling of long distances in search of a new habitat.', correct: 'migration' }, { sentence: 'We can walk along the {blank} in the nature reserve to appreciate the animals.', correct: 'boardwalk' }, { sentence: 'Sea stars have neither scales nor {blank}.', correct: 'backbones' }, { sentence: 'The tube feet found {blank} the sea stars body help it to move around.', correct: 'underneath' }, { sentence: 'The sea stars have an amazing ability to regrow their arms for {blank}.', correct: 'regeneration' }, { sentence: 'With so many areas of woodland being cut down, a lot of {blank} is losing its home.', correct: 'wildlife' } ] },
+            'P3_U6': { title: 'Unit 6: Unusual Plants', words: [ { sentence: 'The {blank} works like a vacuum cleaner.', correct: 'bladderwort' }, { sentence: 'Some plants have developed {blank} ways of surviving.', correct: 'unique' }, { sentence: 'We can think of ways to {blank} and overcome challenges.', correct: 'adapt' }, { sentence: 'The most well-known {blank} plant is the Venus Flytrap.', correct: 'carnivorous' }, { sentence: 'The Venus Flytrap has {blank} coloured leaves that attract insects.', correct: 'vibrant' }, { sentence: 'The Venus Flytrap releases special juices to {blank} the insects.', correct: 'digest' }, { sentence: 'The more the insect {blank}, the deeper it sinks.', correct: 'struggles' }, { sentence: 'The Rafflesia lives as a {blank} on another plant.', correct: 'parasite' }, { sentence: 'The Rafflesia {blank} its host plant but does not kill it.', correct: 'weakens' }, { sentence: 'The lip of the pitcher plant is {blank}.', correct: 'slippery' } ] },
+            'P3_U7': { title: "Unit 7: Boy Under The Bed", words: [ { sentence: 'Smook slid over to the {blank} of the bed.', correct: 'edge' }, { sentence: 'Smook sat {blank} on his bed when his mother told him there was no ghost.', correct: 'quivering' }, { sentence: 'I hope to make a {blank} to the lives of others.', correct: 'difference' }, { sentence: 'As the door {blank} open in the middle of the night...', correct: 'squeaked' }, { sentence: 'The professional dancers amazed us when they flip-flopped backwards {blank}.', correct: 'effortlessly' }, { sentence: 'The stray cat was {blank} from the lack of food.', correct: 'scrawny' }, { sentence: 'We were being {blank} into the train when it arrived.', correct: 'shoved' }, { sentence: 'Tony {blank} his shoulders as he did not know the answer too.', correct: 'shrugged' }, { sentence: 'Smook felt {blank} that the boy was not scared of him.', correct: 'disappointed' }, { sentence: 'He took a deep breath and then slowly {blank} over the side.', correct: 'leaned' } ] },
+            'P3_U8': { title: 'Unit 8: Prince Zak', words: [ { sentence: 'The sneaky robber walked {blank} around the house so he would not be caught.', correct: 'warily' }, { sentence: 'The wise frog hid amongst the weeds and {blank} watched the prince.', correct: 'keenly' }, { sentence: 'The ball that James dropped was {blank} up and down in the water.', correct: 'bobbing' }, { sentence: 'Jonathan has turned over a new leaf and been on his best {blank} lately.', correct: 'behaviour' }, { sentence: 'My plants died because I {blank} watering them for weeks.', correct: 'neglected' }, { sentence: 'Sarah quickly rushed back to the store to {blank} her wallet.', correct: 'retrieve' }, { sentence: 'Her diamond necklace {blank} under the sun, attracting attention.', correct: 'gleamed' }, { sentence: 'We are {blank} to have Mrs Tan as our teacher as she is kind and caring.', correct: 'fortunate' }, { sentence: 'Peter stared {blank} out the window, upset that his game was cancelled.', correct: 'dejectedly' }, { sentence: 'Jenny squealed with {blank} when saw her brand new bicycle.', correct: 'excitement' } ] },
+            'P3_U9': { title: 'Unit 9: Spilt Milk', words: [ { sentence: 'The tourists were frantically snapping photos as the ferry cruised along the {blank}.', correct: 'riverbank' }, { sentence: 'Dinesh and Jamal were always looking for some {blank} when they travel.', correct: 'adventure' }, { sentence: 'Sally {blank} and rolled out of the bed when her mother woke her up early.', correct: 'moaned' }, { sentence: 'The magician made the rabbit {blank} with a quick wave of his magic wand.', correct: 'disappear' }, { sentence: '"We did it!" Betsy {blank} as we caught our breath.', correct: 'exclaimed' }, { sentence: 'You should always keep your {blank} on when you are on the boat.', correct: 'life jacket' }, { sentence: 'The natural {blank} left a huge number of people homeless.', correct: 'disaster' }, { sentence: '"Watch out! You nearly {blank} me in the eye with your umbrella."', correct: 'jabbed' }, { sentence: 'There were many boats lined up at Bedok {blank}.', correct: 'jetty' }, { sentence: 'Running along the beach, she {blank} on a log and fell on the sand.', correct: 'stumbled' } ] }
           },
           P4: {
-            'P4_T1_1': {
-              title: 'Term 1: Definitions (Pt 1)',
-              words: [
-                { sentence: 'The doctor will {blank} the patient to check their health.', correct: 'examine' },
-                { sentence: "A butterfly's wings are very {blank} and easy to break.", correct: 'delicate' },
-                { sentence: 'My skin gets itchy easily because it is very {blank}.', correct: 'sensitive' },
-                { sentence: 'White flakes that fall from your hair are called {blank}.', correct: 'dandruff' },
-                { sentence: 'I enjoy reading books during my {blank} time.', correct: 'leisure' },
-                { sentence: 'Feeding your pet every day is your {blank}.', correct: 'responsibility' },
-                { sentence: 'He helps out as a {blank} at the community park.', correct: 'volunteer' },
-                { sentence: 'Lost pets are kept safe at the {blank}.', correct: 'animal shelter' },
-                { sentence: 'Riding a roller coaster for the first time is a fun {blank}.', correct: 'experience' },
-                { sentence: 'Washing your hands makes catching a cold {blank}.', correct: 'preventable' }
-              ]
-            },
-            'P4_T1_2': {
-              title: 'Term 1: Definitions (Pt 2)',
-              words: [
-                { sentence: 'We took the moving {blank} up to the second floor.', correct: 'escalator' },
-                { sentence: 'The car stopped to let the {blank} cross the road.', correct: 'pedestrian' },
-                { sentence: 'After the accident, his arm was {blank} and could not move well.', correct: 'partially paralyzed' },
-                { sentence: 'The {blank} cat playfully knocked the cup off the table.', correct: 'mischievous' },
-                { sentence: 'She showed great {blank} by trying again after failing.', correct: 'resilience' },
-                { sentence: 'Doctors who treat teeth {blank} in dentistry.', correct: 'specialise' },
-                { sentence: 'Please {blank} that the front door is locked.', correct: 'ensure' },
-                { sentence: 'I {blank} you that everything will be perfectly fine.', correct: 'assure' },
-                { sentence: 'Singapore was the {blank} for the Youth Olympic Games.', correct: 'host city' },
-                { sentence: 'The red light will {blank} that the battery is low.', correct: 'indicate' }
-              ]
-            },
-            'P4_U4_S7': {
-              title: 'Unit 4: The World Beyond Us (7)',
-              words: [
-                { sentence: 'While Mary was eating, a {blank} figure caught her attention.', correct: 'familiar' },
-                { sentence: 'Mother has to stir the pot {blank} while cooking the porridge.', correct: 'continuously' },
-                { sentence: 'An {blank} is a rocky object which moves around the Sun.', correct: 'asteroid' },
-                { sentence: 'Human activities have resulted in the {blank} of some animal species.', correct: 'extinction' },
-                { sentence: 'Gravity is an example of a {blank}.', correct: 'natural phenomenon' },
-                { sentence: 'He uses an object to block light and successfully {blank}.', correct: 'casts a shadow' },
-                { sentence: 'This school is {blank} better because of its varied programmes.', correct: 'infinitely' },
-                { sentence: 'Made of rock, ice and gas, a {blank} moves around the Sun.', correct: 'comet' },
-                { sentence: 'Our solar system is made up of eight {blank}.', correct: 'planets' },
-                { sentence: 'We are taught to {blank} positively with our peers in school.', correct: 'interact' }
-              ]
-            },
-            'P4_U4_S8': {
-              title: 'Unit 4: The World Beyond Us (8)',
-              words: [
-                { sentence: 'I really {blank} all that Jolie has done for me.', correct: 'appreciate' },
-                { sentence: 'We are advised to exercise {blank} to improve muscle strength.', correct: 'regularly' },
-                { sentence: 'When lights are turned off, the room becomes {blank}.', correct: 'as dark as night' },
-                { sentence: 'Planets {blank} around the Sun.', correct: 'orbit in an ellipse' },
-                { sentence: 'A partial {blank} can be observed in Singapore tomorrow.', correct: 'solar eclipse' },
-                { sentence: 'We use a ruler to make sure our lines are {blank}.', correct: 'straight' },
-                { sentence: 'What an {blank} he has put up! He fooled everybody.', correct: 'appearance' },
-                { sentence: 'With her gift of writing {blank}, she captures readers attention.', correct: 'interestingly' },
-                { sentence: 'It is difficult to {blank} which team will win the competition.', correct: 'predict' },
-                { sentence: 'Astronomers use a {blank} to see faraway objects.', correct: 'special telescope' }
-              ]
-            },
-            'P4_U5_S9': {
-              title: "Unit 5: Ruby's Sunflower (9)",
-              words: [
-                { sentence: 'The player believes that {blank} and spends every morning training.', correct: 'practice makes perfect' },
-                { sentence: "The teacher's warning {blank} and the students got injured.", correct: 'fell on deaf ears' },
-                { sentence: 'Do not make unnecessary comments and {blank}, my mother warned.', correct: 'add fuel to the fire' },
-                { sentence: 'In the {blank}, a few weeks passed and the holiday was over.', correct: 'blink of an eye' },
-                { sentence: 'Pack your messy room immediately, Father said {blank}.', correct: 'crossly' },
-                { sentence: 'It is interesting to {blank} the differences between the two animals.', correct: 'compare' },
-                { sentence: 'She is {blank} for cheating the company of millions of dollars.', correct: 'in hot water' },
-                { sentence: 'We worked together to find a solution as we were already {blank}.', correct: 'in the same boat' },
-                { sentence: 'The police spent days on the case, but are now {blank}.', correct: 'back to square one' },
-                { sentence: 'As the performance drew near, she started to {blank} and thought of backing out.', correct: 'get cold feet' }
-              ]
-            },
-            'P4_U5_S10': {
-              title: "Unit 5: Ruby's Sunflower (10)",
-              words: [
-                { sentence: 'Jeffrey chose to {blank} instead of telling his parents the truth.', correct: 'spin a yarn' },
-                { sentence: 'After a few repairs and a good wash, the used car is {blank}.', correct: 'as good as new' },
-                { sentence: 'We had a fight last night and he is {blank}.', correct: 'giving me the cold shoulder' },
-                { sentence: 'Simon {blank} the moment he was announced as head prefect.', correct: 'punched the air with delight' },
-                { sentence: 'It had been {blank}, causing many parts of Singapore to flood.', correct: 'raining cats and dogs' },
-                { sentence: 'Barry {blank} to his feet when the principal entered.', correct: 'scrambled' },
-                { sentence: 'Seeing him scolded for my mistake really {blank}.', correct: 'pricked my conscience' },
-                { sentence: 'You stick with your best friend {blank}.', correct: 'through thick and thin' },
-                { sentence: 'Jill went red with {blank} when Jack exposed her lies.', correct: 'embarrassment' },
-                { sentence: 'When the recess bell rang, he {blank} for the chicken rice stall.', correct: 'made a beeline' }
-              ]
-            },
-            'P4_U6_S11': {
-              title: 'Unit 6: Dinosaurs Exist (11)',
-              words: [
-                { sentence: 'The explorers went on an exciting {blank} to the jungle.', correct: 'expedition' },
-                { sentence: 'Spray some {blank} to avoid mosquito bites.', correct: 'insect repellent' },
-                { sentence: 'The children played soccer at the HDB {blank}.', correct: 'void deck' },
-                { sentence: 'The author writes great stories using his {blank}.', correct: 'vivid imagination' },
-                { sentence: 'A wedding is a very special {blank}.', correct: 'occasion' },
-                { sentence: 'The thieves kept the stolen treasure in their secret {blank}.', correct: 'hideout' },
-                { sentence: 'The {blank} hiker climbed the highest mountain.', correct: 'adventurous' },
-                { sentence: 'She was {blank} to try the spicy food.', correct: 'reluctant' },
-                { sentence: 'The magical cloak made the wizard completely {blank}.', correct: 'invisible' },
-                { sentence: 'He tried to {blank} his parents to buy him a new toy.', correct: 'convince' },
-                { sentence: 'The detective found {blank} of the crime.', correct: 'photographic evidence' },
-                { sentence: 'Dinosaurs are {blank} and no longer roam the Earth.', correct: 'extinct' }
-              ]
-            },
-            'P4_U6_S12': {
-              title: 'Unit 6: Dinosaurs Exist (12)',
-              words: [
-                { sentence: 'The dark cave was guarded by two {blank}.', correct: 'terrifying beasts' },
-                { sentence: 'The wild wolves were {blank} at the strangers.', correct: 'raging and snarling' },
-                { sentence: 'The street performer entertained the {blank}.', correct: 'passers-by' },
-                { sentence: 'The giant troll was a {blank} with huge muscles.', correct: 'towering brute' },
-                { sentence: 'The tiger was {blank}, waiting for its prey in the grass.', correct: 'crouching low' },
-                { sentence: 'The cat was perfectly still and {blank} on the mouse.', correct: 'ready to pounce' },
-                { sentence: 'The horror movie was filled with {blank} that scared us.', correct: 'blood-curdling terrors' },
-                { sentence: 'The magician made the rabbit {blank} into thin air.', correct: 'vanish' },
-                { sentence: 'The scammer tried to {blank} the old lady.', correct: 'deceive' },
-                { sentence: 'It was difficult to {blank} the complex math problem.', correct: 'comprehend' },
-                { sentence: 'The ancient cave walls were covered in {blank}.', correct: 'prehistoric images' },
-                { sentence: 'He {blank} and swam in the dangerous shark waters.', correct: 'ignored the warning' }
-              ]
-            },
-            'P4_U7_S13': {
-              title: 'Unit 7: Heartbeats in the Dark',
-              words: [
-                { sentence: 'We found old dusty boxes hidden up in the roof {blank}.', correct: 'attic' },
-                { sentence: 'I have always {blank} going to the dentist.', correct: 'dreaded' },
-                { sentence: 'I saw a {blank} of gold shining in the dark cave.', correct: 'glint' },
-                { sentence: 'He gave me an angry {blank} when I dropped his book.', correct: 'glare' },
-                { sentence: 'The tall, spooky shadows seem to {blank} us.', correct: 'loom over' },
-                { sentence: 'The giant tropical leaves were {blank}.', correct: 'as big as elephants ears' },
-                { sentence: 'The thick heat in the crowded room was {blank}.', correct: 'suffocating' },
-                { sentence: 'The campfire was {blank} brightly in the dark night.', correct: 'blazing' },
-                { sentence: 'He had to use all his strength to {blank} the stuck door.', correct: 'yank open' },
-                { sentence: 'I {blank} it will rain tomorrow based on the dark clouds.', correct: 'reckon' }
-              ]
-            },
-            'P4_U8_S16': {
-              title: 'Unit 8: All the Buzz (16)',
-              words: [
-                { sentence: 'Add some sugar to {blank} the bitter tea.', correct: 'sweeten' },
-                { sentence: 'Many natural herbs are often used for {blank}.', correct: 'medicinal purposes' },
-                { sentence: 'Take this medicine to {blank} the sharp pain.', correct: 'relieve' },
-                { sentence: 'Use lotion every night to {blank} your dry skin.', correct: 'moisturise' },
-                { sentence: 'He tried to {blank} the annoying fly away with a newspaper.', correct: 'swat' },
-                { sentence: 'The dentist carefully {blank} the decayed tooth.', correct: 'extracted' },
-                { sentence: 'A large {blank} of busy ants lives under the log.', correct: 'colony' },
-                { sentence: 'The red flashing light will {blank} that the battery is low.', correct: 'indicate' },
-                { sentence: 'The bridge is a magnificent steel {blank}.', correct: 'structure' },
-                { sentence: 'A mother bird often {blank} food for its babies to eat.', correct: 'regurgitates' },
-                { sentence: 'The rotten, mouldy food had a {blank} smell.', correct: 'disgusting' },
-                { sentence: 'Please {blank} the money to my bank account online.', correct: 'transfer' }
-              ]
-            },
-            'P4_U8_S17': {
-              title: 'Unit 8: All the Buzz (17)',
-              words: [
-                { sentence: 'The soup was too {blank} and lacked any real flavor.', correct: 'watery' },
-                { sentence: 'Plants will {blank} beautifully in well-watered soil.', correct: 'thrive' },
-                { sentence: 'Wash your hands to prevent {blank} of the clean food.', correct: 'contamination' },
-                { sentence: 'Toads {blank} poison from their skin to deter predators.', correct: 'secrete' },
-                { sentence: 'Leave the wet clay out in the hot sun to {blank}.', correct: 'harden' },
-                { sentence: 'The bakery was filled with the {blank} smell of fresh bread.', correct: 'aromatic' },
-                { sentence: 'The farmer happily {blank} the ripe apples from the orchard.', correct: 'harvested' },
-                { sentence: 'The busy factory {blank} thousands of toys every single day.', correct: 'produced' },
-                { sentence: 'The raw materials are {blank} into finished goods by machines.', correct: 'processed' },
-                { sentence: 'Beekeepers wear full {blank} to avoid getting attacked.', correct: 'protective suits' },
-                { sentence: 'A bee can {blank} you if it feels threatened or scared.', correct: 'sting' },
-                { sentence: 'He gave the baseball a hard {blank} with the wooden bat.', correct: 'smack' }
-              ]
-            },
-            'P4_U9_S18': {
-              title: 'Unit 9: When You Laugh',
-              words: [
-                { sentence: 'She has a good {blank} and remembers everyones names.', correct: 'memory' },
-                { sentence: 'When you are feeling sad, remember that {blank}.', correct: 'laughter is the best medicine' },
-                { sentence: 'Taking a deep breath can help to {blank} in your shoulders.', correct: 'release the tension' },
-                { sentence: 'Crying can act as a natural {blank} for your strong emotions.', correct: 'safety valve' },
-                { sentence: 'There was a huge {blank} of traffic on the highway today.', correct: 'build-up' },
-                { sentence: 'Your phone will strongly {blank} when you get a text message.', correct: 'vibrate' },
-                { sentence: 'Traveling overseas alone is a wonderful learning {blank}.', correct: 'experience' },
-                { sentence: 'Running for an hour straight gave me {blank}.', correct: 'a good workout' },
-                { sentence: 'Eating a banana before the race will give you {blank}.', correct: 'an energy boost' },
-                { sentence: 'Humans need to breathe in fresh {blank} to survive.', correct: 'oxygen' },
-                { sentence: 'Plants take in {blank} from the air during photosynthesis.', correct: 'carbon dioxide' }
-              ]
-            }
+            'P4_T1_1': { title: 'Term 1: Definitions (1)', words: [ { sentence: 'The doctor will {blank} the patient to check their health.', correct: 'examine' }, { sentence: "A butterfly's wings are very {blank} and easy to break.", correct: 'delicate' }, { sentence: 'My skin gets itchy easily because it is very {blank}.', correct: 'sensitive' }, { sentence: 'White flakes that fall from your hair are called {blank}.', correct: 'dandruff' }, { sentence: 'I enjoy reading books during my {blank} time.', correct: 'leisure' }, { sentence: 'Feeding your pet every day is your {blank}.', correct: 'responsibility' }, { sentence: 'He helps out as a {blank} at the community park.', correct: 'volunteer' }, { sentence: 'Lost pets are kept safe at the {blank}.', correct: 'animal shelter' }, { sentence: 'Riding a roller coaster for the first time is a fun {blank}.', correct: 'experience' }, { sentence: 'Washing your hands makes catching a cold {blank}.', correct: 'preventable' } ] },
+            'P4_T1_2': { title: 'Term 1: Definitions (2)', words: [ { sentence: 'We took the moving {blank} up to the second floor.', correct: 'escalator' }, { sentence: 'The car stopped to let the {blank} cross the road.', correct: 'pedestrian' }, { sentence: 'After the accident, his arm was {blank} and could not move well.', correct: 'partially paralyzed' }, { sentence: 'The {blank} cat playfully knocked the cup off the table.', correct: 'mischievous' }, { sentence: 'She showed great {blank} by trying again after failing.', correct: 'resilience' }, { sentence: 'Doctors who treat teeth {blank} in dentistry.', correct: 'specialise' }, { sentence: 'Please {blank} that the front door is locked.', correct: 'ensure' }, { sentence: 'I {blank} you that everything will be perfectly fine.', correct: 'assure' }, { sentence: 'Singapore was the {blank} for the Youth Olympic Games.', correct: 'host city' }, { sentence: 'The red light will {blank} that the battery is low.', correct: 'indicate' } ] },
+            'P4_U4_S7': { title: 'Unit 4: The World Beyond (7)', words: [ { sentence: 'While Mary was eating, a {blank} figure caught her attention.', correct: 'familiar' }, { sentence: 'Mother has to stir the pot {blank} while cooking the porridge.', correct: 'continuously' }, { sentence: 'An {blank} is a rocky object which moves around the Sun.', correct: 'asteroid' }, { sentence: 'Human activities have resulted in the {blank} of some animal species.', correct: 'extinction' }, { sentence: 'Gravity is an example of a {blank}.', correct: 'natural phenomenon' }, { sentence: 'He uses an object to block light and successfully {blank}.', correct: 'casts a shadow' }, { sentence: 'This school is {blank} better because of its varied programmes.', correct: 'infinitely' }, { sentence: 'Made of rock, ice and gas, a {blank} moves around the Sun.', correct: 'comet' }, { sentence: 'Our solar system is made up of eight {blank}.', correct: 'planets' }, { sentence: 'We are taught to {blank} positively with our peers in school.', correct: 'interact' } ] },
+            'P4_U4_S8': { title: 'Unit 4: The World Beyond (8)', words: [ { sentence: 'I really {blank} all that Jolie has done for me.', correct: 'appreciate' }, { sentence: 'We are advised to exercise {blank} to improve muscle strength.', correct: 'regularly' }, { sentence: 'When lights are turned off, the room becomes {blank}.', correct: 'as dark as night' }, { sentence: 'Planets {blank} around the Sun.', correct: 'orbit in an ellipse' }, { sentence: 'A partial {blank} can be observed in Singapore tomorrow.', correct: 'solar eclipse' }, { sentence: 'We use a ruler to make sure our lines are {blank}.', correct: 'straight' }, { sentence: 'What an {blank} he has put up! He fooled everybody.', correct: 'appearance' }, { sentence: 'With her gift of writing {blank}, she captures readers attention.', correct: 'interestingly' }, { sentence: 'It is difficult to {blank} which team will win the competition.', correct: 'predict' }, { sentence: 'Astronomers use a {blank} to see faraway objects.', correct: 'special telescope' } ] },
+            'P4_U5_S9': { title: "Unit 5: Ruby's Sunflower (9)", words: [ { sentence: 'The player believes that {blank} and spends every morning training.', correct: 'practice makes perfect' }, { sentence: "The teacher's warning {blank} and the students got injured.", correct: 'fell on deaf ears' }, { sentence: 'Do not make unnecessary comments and {blank}, my mother warned.', correct: 'add fuel to the fire' }, { sentence: 'In the {blank}, a few weeks passed and the holiday was over.', correct: 'blink of an eye' }, { sentence: 'Pack your messy room immediately, Father said {blank}.', correct: 'crossly' }, { sentence: 'It is interesting to {blank} the differences between the two animals.', correct: 'compare' }, { sentence: 'She is {blank} for cheating the company of millions of dollars.', correct: 'in hot water' }, { sentence: 'We worked together to find a solution as we were already {blank}.', correct: 'in the same boat' }, { sentence: 'The police spent days on the case, but are now {blank}.', correct: 'back to square one' }, { sentence: 'As the performance drew near, she started to {blank} and thought of backing out.', correct: 'get cold feet' } ] },
+            'P4_U5_S10': { title: "Unit 5: Ruby's Sunflower (10)", words: [ { sentence: 'Jeffrey chose to {blank} instead of telling his parents the truth.', correct: 'spin a yarn' }, { sentence: 'After a few repairs and a good wash, the used car is {blank}.', correct: 'as good as new' }, { sentence: 'We had a fight last night and he is {blank}.', correct: 'giving me the cold shoulder' }, { sentence: 'Simon {blank} the moment he was announced as head prefect.', correct: 'punched the air with delight' }, { sentence: 'It had been {blank}, causing many parts of Singapore to flood.', correct: 'raining cats and dogs' }, { sentence: 'Barry {blank} to his feet when the principal entered.', correct: 'scrambled' }, { sentence: 'Seeing him scolded for my mistake really {blank}.', correct: 'pricked my conscience' }, { sentence: 'You stick with your best friend {blank}.', correct: 'through thick and thin' }, { sentence: 'Jill went red with {blank} when Jack exposed her lies.', correct: 'embarrassment' }, { sentence: 'When the recess bell rang, he {blank} for the chicken rice stall.', correct: 'made a beeline' } ] },
+            'P4_U6_S11': { title: 'Unit 6: Dinosaurs Exist (11)', words: [ { sentence: 'The explorers went on an exciting {blank} to the jungle.', correct: 'expedition' }, { sentence: 'Spray some {blank} to avoid mosquito bites.', correct: 'insect repellent' }, { sentence: 'The children played soccer at the HDB {blank}.', correct: 'void deck' }, { sentence: 'The author writes great stories using his {blank}.', correct: 'vivid imagination' }, { sentence: 'A wedding is a very special {blank}.', correct: 'occasion' }, { sentence: 'The thieves kept the stolen treasure in their secret {blank}.', correct: 'hideout' }, { sentence: 'The {blank} hiker climbed the highest mountain.', correct: 'adventurous' }, { sentence: 'She was {blank} to try the spicy food.', correct: 'reluctant' }, { sentence: 'The magical cloak made the wizard completely {blank}.', correct: 'invisible' }, { sentence: 'He tried to {blank} his parents to buy him a new toy.', correct: 'convince' }, { sentence: 'The detective found {blank} of the crime.', correct: 'photographic evidence' }, { sentence: 'Dinosaurs are {blank} and no longer roam the Earth.', correct: 'extinct' } ] },
+            'P4_U6_S12': { title: 'Unit 6: Dinosaurs Exist (12)', words: [ { sentence: 'The dark cave was guarded by two {blank}.', correct: 'terrifying beasts' }, { sentence: 'The wild wolves were {blank} at the strangers.', correct: 'raging and snarling' }, { sentence: 'The street performer entertained the {blank}.', correct: 'passers-by' }, { sentence: 'The giant troll was a {blank} with huge muscles.', correct: 'towering brute' }, { sentence: 'The tiger was {blank}, waiting for its prey in the grass.', correct: 'crouching low' }, { sentence: 'The cat was perfectly still and {blank} on the mouse.', correct: 'ready to pounce' }, { sentence: 'The horror movie was filled with {blank} that scared us.', correct: 'blood-curdling terrors' }, { sentence: 'The magician made the rabbit {blank} into thin air.', correct: 'vanish' }, { sentence: 'The scammer tried to {blank} the old lady.', correct: 'deceive' }, { sentence: 'It was difficult to {blank} the complex math problem.', correct: 'comprehend' }, { sentence: 'The ancient cave walls were covered in {blank}.', correct: 'prehistoric images' }, { sentence: 'He {blank} and swam in the dangerous shark waters.', correct: 'ignored the warning' } ] },
+            'P4_U7_S13': { title: 'Unit 7: Heartbeats (13)', words: [ { sentence: 'We found old dusty boxes hidden up in the roof {blank}.', correct: 'attic' }, { sentence: 'I have always {blank} going to the dentist.', correct: 'dreaded' }, { sentence: 'I saw a {blank} of gold shining in the dark cave.', correct: 'glint' }, { sentence: 'He gave me an angry {blank} when I dropped his book.', correct: 'glare' }, { sentence: 'The tall, spooky shadows seem to {blank} us.', correct: 'loom over' }, { sentence: 'The giant tropical leaves were {blank}.', correct: 'as big as elephants ears' }, { sentence: 'The thick heat in the crowded room was {blank}.', correct: 'suffocating' }, { sentence: 'The campfire was {blank} brightly in the dark night.', correct: 'blazing' }, { sentence: 'He had to use all his strength to {blank} the stuck door.', correct: 'yank open' }, { sentence: 'I {blank} it will rain tomorrow based on the dark clouds.', correct: 'reckon' } ] },
+            'P4_U8_S16': { title: 'Unit 8: All the Buzz (16)', words: [ { sentence: 'Add some sugar to {blank} the bitter tea.', correct: 'sweeten' }, { sentence: 'Many natural herbs are often used for {blank}.', correct: 'medicinal purposes' }, { sentence: 'Take this medicine to {blank} the sharp pain.', correct: 'relieve' }, { sentence: 'Use lotion every night to {blank} your dry skin.', correct: 'moisturise' }, { sentence: 'He tried to {blank} the annoying fly away with a newspaper.', correct: 'swat' }, { sentence: 'The dentist carefully {blank} the decayed tooth.', correct: 'extracted' }, { sentence: 'A large {blank} of busy ants lives under the log.', correct: 'colony' }, { sentence: 'The red flashing light will {blank} that the battery is low.', correct: 'indicate' }, { sentence: 'The bridge is a magnificent steel {blank}.', correct: 'structure' }, { sentence: 'A mother bird often {blank} food for its babies to eat.', correct: 'regurgitates' }, { sentence: 'The rotten, mouldy food had a {blank} smell.', correct: 'disgusting' }, { sentence: 'Please {blank} the money to my bank account online.', correct: 'transfer' } ] },
+            'P4_U8_S17': { title: 'Unit 8: All the Buzz (17)', words: [ { sentence: 'The soup was too {blank} and lacked any real flavor.', correct: 'watery' }, { sentence: 'Plants will {blank} beautifully in well-watered soil.', correct: 'thrive' }, { sentence: 'Wash your hands to prevent {blank} of the clean food.', correct: 'contamination' }, { sentence: 'Toads {blank} poison from their skin to deter predators.', correct: 'secrete' }, { sentence: 'Leave the wet clay out in the hot sun to {blank}.', correct: 'harden' }, { sentence: 'The bakery was filled with the {blank} smell of fresh bread.', correct: 'aromatic' }, { sentence: 'The farmer happily {blank} the ripe apples from the orchard.', correct: 'harvested' }, { sentence: 'The busy factory {blank} thousands of toys every single day.', correct: 'produced' }, { sentence: 'The raw materials are {blank} into finished goods by machines.', correct: 'processed' }, { sentence: 'Beekeepers wear full {blank} to avoid getting attacked.', correct: 'protective suits' }, { sentence: 'A bee can {blank} you if it feels threatened or scared.', correct: 'sting' }, { sentence: 'He gave the baseball a hard {blank} with the wooden bat.', correct: 'smack' } ] },
+            'P4_U9_S18': { title: 'Unit 9: When You Laugh', words: [ { sentence: 'She has a good {blank} and remembers everyones names.', correct: 'memory' }, { sentence: 'When you are feeling sad, remember that {blank}.', correct: 'laughter is the best medicine' }, { sentence: 'Taking a deep breath can help to {blank} in your shoulders.', correct: 'release the tension' }, { sentence: 'Crying can act as a natural {blank} for your strong emotions.', correct: 'safety valve' }, { sentence: 'There was a huge {blank} of traffic on the highway today.', correct: 'build-up' }, { sentence: 'Your phone will strongly {blank} when you get a text message.', correct: 'vibrate' }, { sentence: 'Traveling overseas alone is a wonderful learning {blank}.', correct: 'experience' }, { sentence: 'Running for an hour straight gave me {blank}.', correct: 'a good workout' }, { sentence: 'Eating a banana before the race will give you {blank}.', correct: 'an energy boost' }, { sentence: 'Humans need to breathe in fresh {blank} to survive.', correct: 'oxygen' }, { sentence: 'Plants take in {blank} from the air during photosynthesis.', correct: 'carbon dioxide' } ] }
           }
         };
 
@@ -432,11 +155,12 @@
         ];
         const TIER_5_IDS = [41, 42, 43, 44, 45, 46, 47, 48, 49, 50];
 
+        // Adjusted Ball Rates (-10% effectiveness on all, another 20% on basic/super)
         const BALLS = {
-          basic:  { id: 'basic', name: 'Basic Ball', multiplier: 1, cost: 0, icon: '⚪' },
-          super:  { id: 'super', name: 'Super Ball', multiplier: 1.5, cost: 50, icon: '🔵' },
-          ultra:  { id: 'ultra', name: 'Ultra Ball', multiplier: 2.5, cost: 100, icon: '🟡' },
-          master: { id: 'master', name: 'Master Ball', multiplier: 100, cost: 250, icon: '🟣' } 
+          basic:  { id: 'basic', name: 'Basic Ball', multiplier: 0.72, cost: 0, icon: '⚪' },
+          super:  { id: 'super', name: 'Super Ball', multiplier: 1.08, cost: 50, icon: '🔵' },
+          ultra:  { id: 'ultra', name: 'Ultra Ball', multiplier: 2.25, cost: 100, icon: '🟡' },
+          master: { id: 'master', name: 'Master Ball', multiplier: 90, cost: 250, icon: '🟣' } 
         };
 
         const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
@@ -540,7 +264,6 @@
         const App = () => {
           const [gameState, setGameState] = useState('SELECTION'); 
           
-          // Selection State
           const [selectedLevel, setSelectedLevel] = useState('P3');
           const [selectedLists, setSelectedLists] = useState(['P3_U4']);
 
@@ -558,6 +281,7 @@
           const [battle, setBattle] = useState(null);
           const [battlePhase, setBattlePhase] = useState(''); 
           const [inputValue, setInputValue] = useState('');
+          const [showKeyboard, setShowKeyboard] = useState(false); 
           const [message, setMessage] = useState('');
           const [wordQueue, setWordQueue] = useState([]);
           const [viewing3D, setViewing3D] = useState(null);
@@ -570,7 +294,7 @@
           useEffect(() => { secondsPlayedRef.current = secondsPlayed; }, [secondsPlayed]);
           useEffect(() => { playerNameRef.current = playerName; }, [playerName]);
 
-          // LocalStorage init for SLS
+          // LocalStorage init
           useEffect(() => {
             try {
               const savedData = localStorage.getItem('spellmon_sls_save');
@@ -592,7 +316,7 @@
               setSecondsPlayed(prev => {
                 const next = prev + 1;
                 if (next > 25 * 60 && next % 60 === 0) {
-                    showToast("⏳ Reminder: You've been playing for over 25 minutes!");
+                    showToast("⏳ Reminder: You've been playing for over 25 minutes! Take a break soon.");
                 }
                 return next;
               });
@@ -603,16 +327,14 @@
           const handleSave = () => {
             try {
               localStorage.setItem('spellmon_sls_save', JSON.stringify({
-                  ...data, 
-                  playTime: secondsPlayedRef.current, 
-                  playerName: playerNameRef.current
+                  ...data, playTime: secondsPlayedRef.current, playerName: playerNameRef.current
               }));
               showToast("✅ Game Saved to device successfully!");
             } catch(e) { showToast("❌ Save failed. Browser blocks local storage."); }
           };
 
           const handleCopyReport = () => {
-            const report = `Spellmon Player Report\n` +
+            const report = `Spellmon V1 Player Report\n` +
                 `1. Name: ${playerName || 'Unknown'}\n` +
                 `2. Level: ${data.stats.level}\n` +
                 `3. Play Duration: ${formatTime(secondsPlayed)}\n` +
@@ -620,36 +342,25 @@
                 `5. Mystical Creatures Captured: ${data.caughtTier5.length}/10`;
 
             const textArea = document.createElement("textarea");
-            textArea.value = report;
-            textArea.style.top = "0";
-            textArea.style.left = "0";
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
+            textArea.value = report; textArea.style.top = "0"; textArea.style.left = "0"; textArea.style.position = "fixed";
+            document.body.appendChild(textArea); textArea.focus(); textArea.select();
             try {
                 const successful = document.execCommand('copy');
                 if (successful) showToast("✅ Report copied to clipboard!");
                 else showToast("❌ Failed to copy report.");
-            } catch (err) {
-                showToast("❌ Error copying report.");
-            }
+            } catch (err) { showToast("❌ Error copying report."); }
             document.body.removeChild(textArea);
           };
 
           const changeLevel = (level) => {
-             setSelectedLevel(level);
-             setSelectedLists([Object.keys(ALL_SPELLING_LISTS[level])[0]]);
+             setSelectedLevel(level); setSelectedLists([Object.keys(ALL_SPELLING_LISTS[level])[0]]);
           };
 
           const toggleList = (id) => {
-             setSelectedLists(prev => 
-                prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-             );
+             setSelectedLists(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
           };
 
-          // Map
+          // Map Generation
           const mapData = useMemo(() => {
             let map = [];
             for (let y = 0; y < MAP_HEIGHT; y++) {
@@ -680,11 +391,9 @@
               if (caught.length + prev.length >= 10) return prev; 
 
               let newM = [...prev];
-              
               let available = TIER_5_IDS.filter(id => {
                   if (caught.includes(id)) return false;
                   if (newM.find(m => m.id === id)) return false;
-                  
                   let targetHabitat = MONSTER_DB.find(m => m.id === id).habitat;
                   if (targetHabitat === TILE_SKY && caught.length < 5) return false; 
                   return true;
@@ -771,9 +480,8 @@
           };
 
           const triggerBattle = (mysticalTarget) => {
-            setGameState('BATTLING'); setBattlePhase('QUESTION'); setInputValue('');
-            let selectedMonster;
-            let isSkyBattle = false;
+            setGameState('BATTLING'); setBattlePhase('QUESTION'); setInputValue(''); setShowKeyboard(false);
+            let selectedMonster; let isSkyBattle = false;
             
             if (mysticalTarget) {
               selectedMonster = MONSTER_DB.find(m => m.id === mysticalTarget.id);
@@ -798,26 +506,19 @@
                         if (data.stats.balloons > 0) {
                             setData(prev => {
                                 let newData = {...prev}; newData.stats.balloons -= 1;
-                                try { 
-                                    localStorage.setItem('spellmon_sls_save', JSON.stringify({
-                                        ...newData, playTime: secondsPlayedRef.current, playerName: playerNameRef.current
-                                    })); 
-                                } catch(e) {}
+                                try { localStorage.setItem('spellmon_sls_save', JSON.stringify({...newData, playTime: secondsPlayedRef.current, playerName: playerNameRef.current})); } catch(e) {}
                                 return newData;
                             });
                             showToast("🎈 Used a Hot Air Balloon!");
                             setTimeout(() => triggerBattle(mysticalHere), 800);
-                        } else {
-                            showToast("It's high in the sky! You need a Hot Air Balloon (2000G)!");
-                        }
-                    } else {
-                        triggerBattle(mysticalHere);
-                    }
+                        } else { showToast("It's high in the sky! You need a Hot Air Balloon (2000G)!"); }
+                    } else { triggerBattle(mysticalHere); }
                 }
             }
           }, [gameState, mysticals, player.x, player.y, data.stats.balloons]);
 
           const handleFlee = () => {
+            setShowKeyboard(false);
             if (Math.random() < 0.5) {
               setBattlePhase('RESULT'); setBattle(prev => ({ ...prev, statusText: "Got away safely!" }));
               setTimeout(() => { setGameState('EXPLORING'); setBattle(null); }, 1500);
@@ -834,9 +535,20 @@
             }
           };
 
-          const handleSpellSubmit = (e) => {
-            e.preventDefault(); if (!inputValue.trim()) return;
+          // Virtual Keyboard Logic
+          const handleKeyClick = (k) => {
+            if (k === '⌫') setInputValue(prev => prev.slice(0, -1));
+            else if (k === 'SPACE') setInputValue(prev => prev + ' ');
+            else if (k === 'GO') handleSpellSubmit();
+            else setInputValue(prev => prev + k);
+          };
+
+          const handleSpellSubmit = () => {
+            if (!inputValue.trim()) { setShowKeyboard(false); return; }
+            
+            setShowKeyboard(false);
             const isCorrect = inputValue.trim().toLowerCase() === battle.questionData.answer.toLowerCase();
+            
             if (isCorrect) {
               setBattlePhase('CATCH'); setBattle(prev => ({ ...prev, isStunned: true, statusText: `Correct! ${battle.monster.name} is stunned! Catch rate 3x!` }));
             } else {
@@ -859,7 +571,9 @@
             setData(prev => { let newData = { ...prev }; if (ballType !== 'basic') newData.balls[ballType] -= 1; return newData; });
 
             const ballData = BALLS[ballType];
-            const baseRates = { 1: 0.9, 2: 0.6, 3: 0.4, 4: 0.25, 5: 0.15 }; 
+            
+            // Adjusted base rates (Harder for T3, T4, T5)
+            const baseRates = { 1: 0.9, 2: 0.6, 3: 0.3, 4: 0.15, 5: 0.05 }; 
             let catchChance = baseRates[battle.monster.tier] * ballData.multiplier;
             if (battle.isStunned) catchChance *= 3; 
             
@@ -981,26 +695,26 @@
               
               {viewing3D && <Mystical3DViewer id={viewing3D} onClose={() => setViewing3D(null)} />}
 
-              <div className="bg-blue-900 p-3 sm:p-4 flex justify-between items-center border-b-4 border-blue-950 shadow-md z-10 shrink-0">
+              <div className="bg-blue-900 p-2 sm:p-3 flex justify-between items-center border-b-4 border-blue-950 shadow-md z-10 shrink-0">
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-bold italic tracking-wide text-yellow-400 drop-shadow-md">Spellmon</h1>
-                  <div className="text-xs sm:text-sm">Gold: <span className="text-yellow-300 font-bold">{data.stats.gold}</span> | Mystical: <span className="text-pink-300 font-bold">{data.caughtTier5.length}/10</span></div>
+                  <h1 className="text-lg sm:text-xl font-bold italic tracking-wide text-yellow-400 drop-shadow-md">Spellmon V1</h1>
+                  <div className="text-[10px] sm:text-xs">Gold: <span className="text-yellow-300 font-bold">{data.stats.gold}</span> | Mystical: <span className="text-pink-300 font-bold">{data.caughtTier5.length}/10</span></div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm sm:text-base font-bold text-red-400">HP: {data.stats.hp}/{data.stats.maxHp}</div>
-                  <div className="w-24 sm:w-32 h-2 sm:h-3 bg-gray-900 mt-1 rounded overflow-hidden"><div className="h-full bg-green-400" style={{ width: `${Math.max(0, (data.stats.hp / data.stats.maxHp) * 100)}%` }}></div></div>
-                  <div className="text-xs mt-1 text-blue-200">Level {data.stats.level}</div>
+                  <div className="text-xs sm:text-sm font-bold text-red-400">HP: {data.stats.hp}/{data.stats.maxHp}</div>
+                  <div className="w-20 sm:w-28 h-1.5 sm:h-2 bg-gray-900 mt-0.5 rounded overflow-hidden"><div className="h-full bg-green-400" style={{ width: `${Math.max(0, (data.stats.hp / data.stats.maxHp) * 100)}%` }}></div></div>
+                  <div className="text-[10px] mt-0.5 text-blue-200">Level {data.stats.level}</div>
                 </div>
               </div>
 
-              {message && <div className="absolute top-24 left-0 w-full z-50 p-4 pointer-events-none flex justify-center"><div className="bg-yellow-400 text-black text-center p-3 rounded-lg shadow-xl font-bold border-2 border-black animate-pulse max-w-sm w-full">{message}</div></div>}
+              {message && <div className="absolute top-20 left-0 w-full z-50 p-2 pointer-events-none flex justify-center"><div className="bg-yellow-400 text-black text-center p-2 rounded-lg shadow-xl font-bold border-2 border-black animate-pulse max-w-sm w-full text-sm">{message}</div></div>}
 
               <div className="flex-1 relative bg-black flex flex-col overflow-hidden">
                 
                 {/* FRONT SELECTION SCREEN */}
                 {gameState === 'SELECTION' && (
                   <div className="flex-1 bg-gray-800 p-6 flex flex-col items-center justify-start overflow-y-auto custom-scroll">
-                    <h1 className="font-bold text-yellow-400 mt-4 mb-4 text-center" style={{ fontSize: '3.5rem', textShadow: '2px 2px 8px rgba(0,0,0,0.8)' }}>SPELLMON</h1>
+                    <h1 className="font-bold text-yellow-400 mt-4 mb-4 text-center" style={{ fontSize: '3.5rem', textShadow: '2px 2px 8px rgba(0,0,0,0.8)' }}>SPELLMON V1</h1>
                     <p className="text-gray-300 mb-6 text-center text-lg max-w-md">Select one or more Spelling Lists to build your battle deck!</p>
                     
                     {/* Level Tabs */}
@@ -1039,8 +753,8 @@
 
                 {gameState === 'START' && (
                   <div className="text-center p-6 z-10 w-full h-full bg-gray-900 flex flex-col items-center justify-center">
-                    <h1 className="font-bold text-yellow-400 mb-2" style={{ fontSize: '3.5rem', textShadow: '2px 2px 8px rgba(0,0,0,0.8)' }}>SPELLMON</h1>
-                    <p className="mb-4 text-green-300 font-bold text-xl">Grand Explorer Edition</p>
+                    <h1 className="font-bold text-yellow-400 mb-2" style={{ fontSize: '3.5rem', textShadow: '2px 2px 8px rgba(0,0,0,0.8)' }}>SPELLMON V1</h1>
+                    <p className="mb-4 text-green-300 font-bold text-xl">Version 1.0</p>
                     <p className="mb-10 text-sm sm:text-base text-gray-400 max-w-md">Buy a ship to explore the oceans. Buy a pickaxe to scale mountains. Buy a Balloon to reach the sky.<br/><br/><span className="text-pink-400 font-bold text-lg">OBJECTIVE: Capture all 10 Mystical Animals!</span></p>
                     <button className="bg-red-600 hover:bg-red-500 text-white px-10 py-5 rounded-full font-bold text-2xl border-4 border-red-800 active:scale-95 transition-transform ios-btn" style={{ boxShadow: '0 0 20px rgba(220,38,38,0.5)' }} onClick={handleActionA}>START EXPLORING</button>
                   </div>
@@ -1051,14 +765,14 @@
                     <canvas ref={canvasRef} width={VIEW_WIDTH * TILE_SIZE} height={VIEW_HEIGHT * TILE_SIZE} className="image-pixelated border-4 border-gray-700 bg-black" style={{ width: '100%', maxWidth: '520px', aspectRatio: '1/1', boxShadow: '0 0 30px rgba(0,0,0,0.8)' }} />
                     
                     {/* TIMER */}
-                    <div className="absolute top-4 left-4 bg-gray-900 bg-opacity-80 border-2 border-gray-500 rounded px-3 py-1 shadow-[0_0_10px_rgba(0,0,0,0.5)] z-10 pointer-events-none flex items-center gap-2 text-yellow-400 font-mono font-bold text-sm sm:text-base">
+                    <div className="absolute top-4 left-4 bg-gray-900 bg-opacity-80 border-2 border-gray-500 rounded px-2 py-1 shadow-[0_0_10px_rgba(0,0,0,0.5)] z-10 pointer-events-none flex items-center gap-1 text-yellow-400 font-mono font-bold text-xs sm:text-sm">
                       ⏱ {formatTime(secondsPlayed)}
                     </div>
 
-                    <div className="absolute top-4 right-4 w-24 h-24 sm:w-32 sm:h-32 border-4 border-green-500 rounded z-10 overflow-hidden pointer-events-none bg-green-900 bg-opacity-80" style={{ boxShadow: '0 0 15px green' }}>
+                    <div className="absolute top-4 right-4 w-20 h-20 sm:w-28 sm:h-28 border-4 border-green-500 rounded z-10 overflow-hidden pointer-events-none bg-green-900 bg-opacity-80" style={{ boxShadow: '0 0 15px green' }}>
                       <div className="absolute inset-0" style={{ background: 'linear-gradient(0deg,transparent 24%,rgba(0,255,0,0.4) 25%,rgba(0,255,0,0.4) 26%,transparent 27%,transparent 74%,rgba(0,255,0,0.4) 75%,rgba(0,255,0,0.4) 76%,transparent 77%,transparent)', backgroundSize: '1rem 1rem' }} />
-                      <div className="absolute w-3 h-3 bg-white rounded-full" style={{ left: `${(player.x / MAP_WIDTH) * 100}%`, top: `${(player.y / MAP_HEIGHT) * 100}%`, transform: 'translate(-50%, -50%)', boxShadow: '0 0 8px white' }} />
-                      {mysticals.map(m => <div key={m.id} className="absolute bg-pink-500 w-3 h-3 rounded-full animate-ping" style={{ left: `${(m.x / MAP_WIDTH) * 100}%`, top: `${(m.y / MAP_HEIGHT) * 100}%`, transform: 'translate(-50%, -50%)', boxShadow: '0 0 12px magenta' }} />)}
+                      <div className="absolute w-2 h-2 sm:w-3 sm:h-3 bg-white rounded-full" style={{ left: `${(player.x / MAP_WIDTH) * 100}%`, top: `${(player.y / MAP_HEIGHT) * 100}%`, transform: 'translate(-50%, -50%)', boxShadow: '0 0 8px white' }} />
+                      {mysticals.map(m => <div key={m.id} className="absolute bg-pink-500 w-2 h-2 sm:w-3 sm:h-3 rounded-full animate-ping" style={{ left: `${(m.x / MAP_WIDTH) * 100}%`, top: `${(m.y / MAP_HEIGHT) * 100}%`, transform: 'translate(-50%, -50%)', boxShadow: '0 0 12px magenta' }} />)}
                     </div>
                   </div>
                 )}
@@ -1133,7 +847,6 @@
                         </div>
                       )}
 
-                      {/* Hot Air Balloon */}
                       <div className="bg-sky-800 p-4 rounded-lg border-2 border-sky-700 flex justify-between items-center shadow-lg">
                         <div className="flex items-center gap-4"><div className="text-4xl">🎈</div><div><div className="font-bold text-xl text-sky-200">Hot Air Balloon</div><div className="text-sm text-sky-300">Reach the sky! Owned: {data.stats.balloons}</div></div></div>
                         <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= 2000 ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('balloon', null, 2000)}>2000 G</button>
@@ -1156,47 +869,68 @@
 
                 {gameState === 'BATTLING' && battle && (
                   <div className="absolute inset-0 bg-gray-100 flex flex-col z-20">
-                    <div className={`flex flex-col items-center justify-center relative border-b-8 border-gray-800 p-4 shadow-inner ${battle.isSkyBattle ? 'bg-gradient-to-b from-blue-300 to-blue-500' : 'bg-gradient-to-b from-green-200 to-teal-400'}`} style={{ height: '40%' }}>
-                      <div className="absolute top-4 left-4 bg-white text-black px-4 py-2 border-2 border-black rounded-lg shadow-md">
-                        <p className="font-bold text-lg sm:text-xl flex items-center gap-2">{battle.monster.name} <span className={`text-sm px-2 py-1 rounded text-white ${battle.monster.tier === 5 ? 'bg-pink-600' : 'bg-gray-600'}`}>Tier {battle.monster.tier}</span></p>
+                    <div className={`flex flex-col items-center justify-center relative border-b-4 border-gray-800 p-2 shadow-inner shrink-0 ${battle.isSkyBattle ? 'bg-gradient-to-b from-blue-300 to-blue-500' : 'bg-gradient-to-b from-green-200 to-teal-400'}`} style={{ height: '42%' }}>
+                      <div className="absolute top-2 left-2 bg-white text-black px-2 py-1 border-2 border-black rounded-lg shadow-md">
+                        <p className="font-bold text-xs sm:text-sm flex items-center gap-1">{battle.monster.name} <span className={`text-[10px] px-1 py-0.5 rounded text-white ${battle.monster.tier === 5 ? 'bg-pink-600' : 'bg-gray-600'}`}>Tier {battle.monster.tier}</span></p>
                       </div>
-                      <div className={`animate-bounce drop-shadow-2xl ${battle.isStunned ? 'opacity-50 grayscale' : ''}`} style={{ fontSize: '8rem' }}>{battle.monster.sprite}</div>
+                      <div className={`animate-bounce drop-shadow-2xl ${battle.isStunned ? 'opacity-50 grayscale' : ''}`} style={{ fontSize: '6rem' }}>{battle.monster.sprite}</div>
                     </div>
 
-                    <div className="p-4 flex flex-col shrink-0" style={{ height: '60%' }}>
-                      <div className="bg-white border-4 border-gray-800 rounded-xl p-4 mb-4 text-black font-bold shadow-md flex items-center min-h-[4rem]"><p className="text-lg sm:text-xl text-center w-full">{battle.statusText}</p></div>
+                    <div className="p-2 sm:p-3 flex flex-col bg-gray-100 flex-1 overflow-hidden w-full">
+                      <div className="bg-white border-2 border-gray-800 rounded-lg p-2 mb-2 text-black font-bold shadow-md flex items-center shrink-0 min-h-[2.5rem]">
+                          <p className="text-sm sm:text-base text-center w-full">{battle.statusText}</p>
+                      </div>
 
                       {battlePhase === 'QUESTION' && (
-                        <div className="flex-1 flex flex-col justify-between">
-                          <div className="bg-green-900 text-white p-6 rounded-xl border-4 border-green-900 flex flex-col items-center justify-center text-center shadow-lg flex-1">
-                            <p className="font-bold text-xl sm:text-2xl mb-4 leading-relaxed">{battle.questionData.sentence.replace('{blank}', '________')}</p>
-                            <p className="text-base text-yellow-300 mb-6 tracking-widest font-mono bg-black bg-opacity-40 px-4 py-2 rounded-lg">Hint: {battle.questionData.helper}</p>
-                            <form onSubmit={handleSpellSubmit} className="w-full flex gap-3">
-                              <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Type answer here..." autoCapitalize="none" autoComplete="off" autoCorrect="off" spellCheck="false" className="flex-1 p-4 rounded-xl text-black font-black text-center border-4 border-gray-400 text-xl sm:text-2xl shadow-inner focus:outline-none focus:ring-4 focus:ring-blue-500" />
-                              <button type="submit" className="bg-blue-600 px-8 py-4 rounded-xl text-white font-black text-xl shadow-md active:bg-blue-500 border-b-4 border-blue-800 active:border-b-0 active:translate-y-1 ios-btn">GO</button>
-                            </form>
+                        <div className="flex-1 flex flex-col justify-start overflow-hidden">
+                          <div className="bg-green-900 text-white p-3 rounded-xl border-2 border-green-800 flex flex-col items-center justify-center text-center shadow-lg w-full shrink-0">
+                            
+                            <p className="font-bold text-sm sm:text-lg mb-2 leading-tight">
+                              {battle.questionData.sentence.split('{blank}').map((part, index, array) => (
+                                <Fragment key={index}>
+                                  {part}
+                                  {index < array.length - 1 && (
+                                    <span className="text-yellow-300 font-black px-1 mx-1 border-b-2 border-yellow-300 uppercase tracking-widest bg-black bg-opacity-30 rounded">
+                                      {inputValue || '      '}
+                                    </span>
+                                  )}
+                                </Fragment>
+                              ))}
+                            </p>
+                            
+                            <p className="text-[10px] sm:text-xs text-yellow-300 mb-2 tracking-widest font-mono bg-black bg-opacity-40 px-2 py-1 rounded-md">Hint: {battle.questionData.helper}</p>
+                            
+                            <div 
+                               className="w-full p-2 rounded-lg text-black font-black text-center border-2 border-gray-400 text-lg sm:text-xl shadow-inner bg-white cursor-pointer active:bg-gray-200 min-h-[2.5rem] flex items-center justify-center ios-btn"
+                               onClick={() => setShowKeyboard(true)}
+                            >
+                               {inputValue || <span className="text-gray-400 text-xs sm:text-sm">Tap here to type answer...</span>}
+                            </div>
                           </div>
-                          <div className="w-full flex gap-4 mt-4 shrink-0">
-                            <button type="button" onClick={() => setBattlePhase('CATCH')} className="flex-1 bg-yellow-500 p-4 rounded-xl text-black font-black text-lg shadow-md active:bg-yellow-400 border-b-4 border-yellow-700 active:border-b-0 active:translate-y-1 ios-btn">🎒 OPEN BAG</button>
-                            <button type="button" onClick={handleFlee} className="flex-1 bg-gray-600 p-4 rounded-xl text-white font-black text-lg shadow-md active:bg-gray-500 border-b-4 border-gray-800 active:border-b-0 active:translate-y-1 ios-btn">🏃 FLEE</button>
-                          </div>
+
+                          {!showKeyboard && (
+                            <div className="w-full flex gap-2 mt-2 shrink-0">
+                              <button type="button" onClick={() => setBattlePhase('CATCH')} className="flex-1 bg-yellow-500 p-2 rounded-lg text-black font-black text-sm shadow-md active:bg-yellow-400 border-b-4 border-yellow-700 active:border-b-0 active:translate-y-1 ios-btn">🎒 OPEN BAG</button>
+                              <button type="button" onClick={handleFlee} className="flex-1 bg-gray-600 p-2 rounded-lg text-white font-black text-sm shadow-md active:bg-gray-500 border-b-4 border-gray-800 active:border-b-0 active:translate-y-1 ios-btn">🏃 FLEE</button>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {battlePhase === 'CATCH' && (
-                        <div className="flex-1 bg-gray-800 p-4 rounded-xl border-4 border-gray-900 flex flex-col gap-4">
-                          <div className="grid grid-cols-2 gap-4 flex-1">
+                        <div className="flex-1 bg-gray-800 p-2 sm:p-3 rounded-xl border-2 border-gray-900 flex flex-col gap-2 overflow-y-auto">
+                          <div className="grid grid-cols-2 gap-2 flex-1">
                             {Object.keys(BALLS).map(b => (
-                              <button key={b} className={`rounded-xl p-4 text-lg font-bold flex flex-col items-center justify-center border-b-4 shadow-md ios-btn active:border-b-0 active:translate-y-1 ${data.balls[b] > 0 || b === 'basic' ? 'bg-gray-100 hover:bg-gray-200 text-black border-gray-400' : 'bg-gray-600 text-gray-400 border-gray-700 opacity-50'}`} onClick={() => throwBall(b)} disabled={data.balls[b] <= 0 && b !== 'basic'}>
-                                <span className="text-4xl mb-2">{BALLS[b].icon}</span><span>{BALLS[b].name}</span><span className="text-sm font-normal">x{b === 'basic' ? '∞' : data.balls[b]}</span>
+                              <button key={b} className={`rounded-lg p-1 sm:p-2 text-sm font-bold flex flex-col items-center justify-center border-b-4 shadow-md ios-btn active:border-b-0 active:translate-y-1 ${data.balls[b] > 0 || b === 'basic' ? 'bg-gray-100 hover:bg-gray-200 text-black border-gray-400' : 'bg-gray-600 text-gray-400 border-gray-700 opacity-50'}`} onClick={() => throwBall(b)} disabled={data.balls[b] <= 0 && b !== 'basic'}>
+                                <span className="text-2xl sm:text-3xl mb-0.5">{BALLS[b].icon}</span><span className="text-sm">{BALLS[b].name}</span><span className="text-xs font-normal">x{b === 'basic' ? '∞' : data.balls[b]}</span>
                               </button>
                             ))}
                           </div>
-                          <button onClick={() => setBattlePhase('QUESTION')} className="w-full bg-red-600 p-4 rounded-xl text-white font-black text-lg shadow-md active:bg-red-500 border-b-4 border-red-800 active:border-b-0 active:translate-y-1 ios-btn">BACK TO BATTLE</button>
+                          <button onClick={() => setBattlePhase('QUESTION')} className="w-full bg-red-600 p-2 rounded-lg text-white font-black text-sm sm:text-base shadow-md active:bg-red-500 border-b-4 border-red-800 active:border-b-0 active:translate-y-1 ios-btn shrink-0">BACK TO BATTLE</button>
                         </div>
                       )}
 
-                      {battlePhase === 'RESULT' && <div className="flex-1 bg-gray-800 rounded-xl border-4 border-gray-900 flex items-center justify-center"><div className="animate-spin" style={{ fontSize: '5rem' }}>🌀</div></div>}
+                      {battlePhase === 'RESULT' && <div className="flex-1 bg-gray-800 rounded-xl border-2 border-gray-900 flex items-center justify-center"><div className="animate-spin" style={{ fontSize: '4rem' }}>🌀</div></div>}
                     </div>
                   </div>
                 )}
@@ -1223,8 +957,8 @@
                 )}
               </div>
 
-              {/* BOTTOM CONTROLS */}
-              {gameState !== 'SELECTION' && (
+              {/* BOTTOM CONTROLS OR VIRTUAL KEYBOARD */}
+              {gameState !== 'SELECTION' && !showKeyboard && (
               <div className="bg-gray-800 p-4 sm:p-6 border-t-4 border-gray-900 flex justify-between items-center h-56 sm:h-64 shrink-0 z-10" style={{ boxShadow: '0 -10px 20px rgba(0,0,0,0.3)' }}>
                 <div className="grid grid-cols-3 gap-2 sm:gap-3 w-48 sm:w-56 h-48 sm:h-56">
                   <div /> <DPadButton dx={0} dy={-1} label="▲" /> <div />
@@ -1243,6 +977,30 @@
                   <button className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-green-500 border-b-8 border-green-700 shadow-xl flex items-center justify-center text-green-100 font-bold text-4xl active:translate-y-2 active:border-b-0 self-end ios-btn" onClick={handleActionA}>A</button>
                 </div>
               </div>
+              )}
+
+              {/* VIRTUAL KEYBOARD OVERLAY (REPLACES D-PAD IN LAYOUT TO PREVENT OVERLAP) */}
+              {showKeyboard && (
+                <div className="w-full h-56 sm:h-64 bg-gray-300 pt-1 pb-2 sm:pb-4 px-1 sm:px-2 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-20 animate-slide-up rounded-t-xl border-t-2 border-gray-400 flex flex-col justify-between shrink-0">
+                  <div className="flex justify-between items-center px-2 py-1 shrink-0">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Virtual Keyboard</span>
+                    <button onClick={() => setShowKeyboard(false)} className="text-blue-600 font-bold text-xs sm:text-sm ios-btn px-3 py-1 bg-gray-200 rounded-full active:bg-gray-400">Done</button>
+                  </div>
+                  <div className="flex justify-center gap-1 w-full px-1 flex-1 mb-1">
+                    {['q','w','e','r','t','y','u','i','o','p'].map(k => <button key={k} onPointerDown={(e)=>{e.preventDefault(); handleKeyClick(k);}} className="rounded shadow-sm text-black font-bold text-base sm:text-lg flex-1 flex items-center justify-center bg-white active:bg-gray-400 ios-btn uppercase">{k}</button>)}
+                  </div>
+                  <div className="flex justify-center gap-1 w-full px-3 sm:px-5 flex-1 mb-1">
+                    {['a','s','d','f','g','h','j','k','l'].map(k => <button key={k} onPointerDown={(e)=>{e.preventDefault(); handleKeyClick(k);}} className="rounded shadow-sm text-black font-bold text-base sm:text-lg flex-1 flex items-center justify-center bg-white active:bg-gray-400 ios-btn uppercase">{k}</button>)}
+                  </div>
+                  <div className="flex justify-center gap-1 w-full px-1 flex-1 mb-1">
+                    <button onPointerDown={(e)=>{e.preventDefault(); handleKeyClick('⌫');}} className="rounded shadow-sm text-black font-bold text-sm sm:text-base flex-[1.5] flex items-center justify-center bg-gray-400 active:bg-gray-500 ios-btn">⌫</button>
+                    {['z','x','c','v','b','n','m'].map(k => <button key={k} onPointerDown={(e)=>{e.preventDefault(); handleKeyClick(k);}} className="rounded shadow-sm text-black font-bold text-base sm:text-lg flex-1 flex items-center justify-center bg-white active:bg-gray-400 ios-btn uppercase">{k}</button>)}
+                    <button onPointerDown={(e)=>{e.preventDefault(); handleKeyClick('GO');}} className="rounded shadow-sm text-white font-bold text-sm sm:text-base flex-[1.5] flex items-center justify-center bg-blue-600 active:bg-blue-700 ios-btn">GO</button>
+                  </div>
+                  <div className="flex justify-center gap-1 w-full px-1 flex-1 mb-1">
+                    <button onPointerDown={(e)=>{e.preventDefault(); handleKeyClick('SPACE');}} className="rounded shadow-sm text-black font-bold text-sm sm:text-base flex-1 flex items-center justify-center bg-white active:bg-gray-400 ios-btn">SPACE</button>
+                  </div>
+                </div>
               )}
             </div>
           );
