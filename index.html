@@ -1,16 +1,19 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Spellmon - SLS Edition</title>
+    <title>Spellmon - Web Edition</title>
     
-    <link href="vendor/tailwind.min_4.css" rel="stylesheet">
+    <!-- Static CSS to bypass SLS/GitHub security blocks -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     
-    <script crossorigin src="vendor/react.production.min.js"></script>
-    <script crossorigin src="vendor/react-dom.production.min_1.js"></script>
-    <script src="vendor/babel.min_2.js"></script>
-    <script src="vendor/three.min_3.js"></script>
+    <!-- Upgraded to highly-reliable CDNJS -->
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.3/babel.min.js"></script>
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
         html, body, #root { height: 100%; width: 100%; margin: 0; padding: 0; background-color: #111827; overscroll-behavior-y: none; }
@@ -21,13 +24,28 @@
         .animate-fade-in { animation: fade-in 0.3s ease-out; }
         .image-pixelated { image-rendering: pixelated; }
         input[type="text"] { font-size: 16px !important; -webkit-user-select: auto; user-select: auto; } 
-        /* Custom scrollbar for selection screen */
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <!-- Safety Loading Screen to prevent blank white screens -->
+        <div style="color: white; text-align: center; padding-top: 30vh; font-family: sans-serif;">
+            <h2 style="font-size: 2.5rem; color: #facc15; margin-bottom: 10px;">Loading Spellmon...</h2>
+            <p style="color: #9ca3af;">Please wait while the game engine boots up.</p>
+        </div>
+    </div>
+
+    <!-- Global Error Catcher -->
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            document.getElementById('root').innerHTML = 
+                '<div style="color: #fca5a5; padding: 30px; font-family: sans-serif; text-align: center; margin-top: 20vh;">' +
+                '<h3 style="font-size: 2rem;">Game Engine Error</h3><p>' + msg + '</p></div>';
+            return false;
+        };
+    </script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -400,7 +418,7 @@
           { id: 37, name: 'Gorilla', sprite: '🦍', tier: 4, value: 200 }, { id: 38, name: 'Bear', sprite: '🐻', tier: 4, value: 200 },
           { id: 39, name: 'Leopard', sprite: '🐆', tier: 4, value: 200 }, { id: 40, name: 'Giraffe', sprite: '🦒', tier: 4, value: 200 },
           
-          // Tier 5 (Legendary)
+          // Tier 5 (Legendary) - SKY HABITATS UNLOCK AFTER 5 CATCHES
           { id: 41, name: 'Dragon', sprite: '🐉', tier: 5, value: 1000, habitat: TILE_SKY }, 
           { id: 42, name: 'Unicorn', sprite: '🦄', tier: 5, value: 1000, habitat: TILE_FOREST },
           { id: 43, name: 'Phoenix', sprite: '🦚', tier: 5, value: 1000, habitat: TILE_SKY }, 
@@ -1115,6 +1133,7 @@
                         </div>
                       )}
 
+                      {/* Hot Air Balloon */}
                       <div className="bg-sky-800 p-4 rounded-lg border-2 border-sky-700 flex justify-between items-center shadow-lg">
                         <div className="flex items-center gap-4"><div className="text-4xl">🎈</div><div><div className="font-bold text-xl text-sky-200">Hot Air Balloon</div><div className="text-sm text-sky-300">Reach the sky! Owned: {data.stats.balloons}</div></div></div>
                         <button className={`px-6 py-3 rounded-lg font-bold text-base shadow-md ios-btn ${data.stats.gold >= 2000 ? 'bg-yellow-500 text-black active:bg-yellow-400' : 'bg-gray-500 text-gray-300 opacity-50'}`} onClick={() => buyItem('balloon', null, 2000)}>2000 G</button>
@@ -1234,3 +1253,6 @@
     </script>
 </body>
 </html>
+
+
+```
